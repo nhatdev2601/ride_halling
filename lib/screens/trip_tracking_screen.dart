@@ -45,6 +45,7 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
     if (mounted) {
       setState(() {
         _currentStatus = TripStatus.driverFound;
+        //Thông tin tài xế
         _assignedDriver = Driver(
           id: '1',
           name: 'nhat',
@@ -403,6 +404,9 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
                             child: TextButton(
                               onPressed: () {
                                 // Cancel trip
+
+
+                                
                                 Navigator.pop(context);
                               },
                               style: TextButton.styleFrom(

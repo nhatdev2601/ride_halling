@@ -1,14 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
 import '../theme/app_theme.dart';
 import '../widgets/location_input.dart';
 import '../widgets/bottom_book_button.dart';
 import 'vehicle_selection_screen.dart';
-import 'package:flutter/foundation.dart';
-import 'package:flutter/gestures.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -24,58 +20,12 @@ class _HomeScreenState extends State<HomeScreen> {
   GoogleMapController? _mapController;
   LatLng _currentPosition = const LatLng(10.762622, 106.660172); // default HCM
 
-  LatLng? _pickupLatLng;
-  LatLng? _destinationLatLng;
-
-  Set<Polyline> _polylines = {};
-  Set<Marker> _markers = {};
-
-  // 🌍 Chuyển địa chỉ text thành tọa độ dùng Google Maps API
-  Future<LatLng?> _geocodeAddress(String address) async {
-    try {
-      const String apiKey =
-          'AIzaSyDgVoRC7xtqrRixaQRTHKcxRLTon-RXpug'; // Thay bằng API key của bạn
-
-      final String url =
-          'https://maps.googleapis.com/maps/api/geocode/json?address=${Uri.encodeComponent(address)}&key=$apiKey';
-
-      final response = await http.get(Uri.parse(url));
-
-      if (response.statusCode == 200) {
-        final json = jsonDecode(response.body);
-
-        if (json['results'].isNotEmpty) {
-          final location = json['results'][0]['geometry']['location'];
-          return LatLng(location['lat'], location['lng']);
-        }
-      }
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Không tìm thấy địa chỉ: $address'),
-            backgroundColor: AppTheme.error,
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Lỗi: ${e.toString()}'),
-            backgroundColor: AppTheme.error,
-          ),
-        );
-      }
-    }
-    return null;
-  }
-
   // 📍 Lấy vị trí hiện tại
   Future<void> _getCurrentLocation() async {
     bool serviceEnabled;
     LocationPermission permission;
 
+    // Kiểm tra GPS bật chưa
     serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -87,6 +37,7 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
 
+    // Xin quyền truy cập
     permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
@@ -103,6 +54,7 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
 
+    // Lấy vị trí hiện tại
     Position position = await Geolocator.getCurrentPosition(
       desiredAccuracy: LocationAccuracy.high,
     );
@@ -111,90 +63,9 @@ class _HomeScreenState extends State<HomeScreen> {
       _currentPosition = LatLng(position.latitude, position.longitude);
     });
 
+    // Di chuyển camera đến vị trí mới
     _mapController?.animateCamera(
       CameraUpdate.newLatLngZoom(_currentPosition, 15),
-    );
-  }
-
-  // 🗺️ Cập nhật đường khi có pickup và destination
-  Future<void> _updateRoute() async {
-    if (_pickupLocation.isEmpty || _destinationLocation.isEmpty) {
-      setState(() {
-        _polylines.clear();
-        _markers.clear();
-      });
-      return;
-    }
-
-    // Geocode pickup location
-    _pickupLatLng = await _geocodeAddress(_pickupLocation);
-    // Geocode destination location
-    _destinationLatLng = await _geocodeAddress(_destinationLocation);
-
-    if (_pickupLatLng != null && _destinationLatLng != null) {
-      // Cập nhật markers
-      setState(() {
-        _markers = {
-          Marker(
-            markerId: const MarkerId('pickup'),
-            position: _pickupLatLng!,
-            infoWindow: const InfoWindow(title: 'Điểm đi'),
-            icon: BitmapDescriptor.defaultMarkerWithHue(
-              BitmapDescriptor.hueGreen,
-            ),
-          ),
-          Marker(
-            markerId: const MarkerId('destination'),
-            position: _destinationLatLng!,
-            infoWindow: const InfoWindow(title: 'Điểm đến'),
-            icon: BitmapDescriptor.defaultMarkerWithHue(
-              BitmapDescriptor.hueRed,
-            ),
-          ),
-        };
-
-        // Vẽ polyline (đường thẳng đơn giản)
-        _polylines = {
-          Polyline(
-            polylineId: const PolylineId('route'),
-            points: [_pickupLatLng!, _destinationLatLng!],
-            color: AppTheme.primaryGreen,
-            width: 5,
-            geodesic: true,
-          ),
-        };
-      });
-
-      // Zoom map để thấy cả 2 điểm
-      _zoomToFitMarkers();
-    }
-  }
-
-  // 🔍 Zoom map để thấy cả pickup và destination
-  void _zoomToFitMarkers() {
-    if (_pickupLatLng == null || _destinationLatLng == null) return;
-
-    double minLat = (_pickupLatLng!.latitude < _destinationLatLng!.latitude)
-        ? _pickupLatLng!.latitude
-        : _destinationLatLng!.latitude;
-    double minLng = (_pickupLatLng!.longitude < _destinationLatLng!.longitude)
-        ? _pickupLatLng!.longitude
-        : _destinationLatLng!.longitude;
-    double maxLat = (_pickupLatLng!.latitude >= _destinationLatLng!.latitude)
-        ? _pickupLatLng!.latitude
-        : _destinationLatLng!.latitude;
-    double maxLng = (_pickupLatLng!.longitude >= _destinationLatLng!.longitude)
-        ? _pickupLatLng!.longitude
-        : _destinationLatLng!.longitude;
-
-    _mapController?.animateCamera(
-      CameraUpdate.newLatLngBounds(
-        LatLngBounds(
-          southwest: LatLng(minLat, minLng),
-          northeast: LatLng(maxLat, maxLng),
-        ),
-        100, // padding
-      ),
     );
   }
 
@@ -222,7 +93,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    _getCurrentLocation();
+    _getCurrentLocation(); // tự động lấy vị trí khi vào app
   }
 
   @override
@@ -230,6 +101,7 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       body: Stack(
         children: [
+          // 🗺️ Google Map thật
           GoogleMap(
             initialCameraPosition: CameraPosition(
               target: _currentPosition,
@@ -238,22 +110,14 @@ class _HomeScreenState extends State<HomeScreen> {
             myLocationEnabled: true,
             myLocationButtonEnabled: false,
             zoomControlsEnabled: false,
-            liteModeEnabled: false,
-            polylines: _polylines,
-            markers: _markers,
-            gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
-              Factory<OneSequenceGestureRecognizer>(
-                () => EagerGestureRecognizer(),
-              ),
-            },
-            onMapCreated: (controller) {
-              _mapController = controller;
-            },
+            onMapCreated: (controller) => _mapController = controller,
           ),
 
+          // Overlay với UI
           SafeArea(
             child: Column(
               children: [
+                // Header với logo
                 Container(
                   margin: const EdgeInsets.all(16),
                   child: Row(
@@ -333,24 +197,21 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
 
+                // Ô nhập địa chỉ
                 LocationInput(
-                  onPickupChanged: (value) {
-                    _pickupLocation = value;
-                    _updateRoute();
-                  },
-                  onDestinationChanged: (value) {
-                    _destinationLocation = value;
-                    _updateRoute();
-                  },
+                  onPickupChanged: (value) => _pickupLocation = value,
+                  onDestinationChanged: (value) => _destinationLocation = value,
                 ),
 
                 const Spacer(),
 
+                // Nút đặt xe
                 BottomBookButton(onPressed: _onBookRide),
               ],
             ),
           ),
 
+          // 🧭 Nút định vị hiện tại
           Positioned(
             right: 16,
             bottom: 180,

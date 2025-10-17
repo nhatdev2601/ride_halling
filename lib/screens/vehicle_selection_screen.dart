@@ -308,6 +308,7 @@ class _VehicleSelectionScreenState extends State<VehicleSelectionScreen> {
                       underline: const SizedBox(),
                       onChanged: (value) {
                         if (value != null) {
+                          ///// chuyển api thanh toán /tiền mặt
                           setState(() {
                             _selectedPayment = value;
                           });
