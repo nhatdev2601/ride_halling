@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../theme/app_theme.dart';
+import '../providers/auth_provider.dart';
 import 'login_screen.dart';
 import 'main_screen.dart';
 
@@ -23,6 +25,7 @@ class _RegisterScreenState extends State<RegisterScreen>
   bool _obscureConfirmPassword = true;
   bool _isLoading = false;
   bool _agreeToTerms = false;
+  String _selectedRole = 'customer'; // Default role
 
   late AnimationController _fadeController;
   late AnimationController _slideController;
@@ -70,31 +73,65 @@ class _RegisterScreenState extends State<RegisterScreen>
   }
 
   Future<void> _register() async {
+    if (_formKey.currentState?.validate() != true) {
+      return;
+    }
+
+    if (!_agreeToTerms) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Vui lòng đồng ý với Điều khoản sử dụng'),
+          backgroundColor: AppTheme.warning,
+        ),
+      );
+      return;
+    }
+
     setState(() {
       _isLoading = true;
     });
 
-    // Simulate register API call
-    await Future.delayed(const Duration(seconds: 1));
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+
+    final success = await authProvider.register(
+      fullName: _nameController.text.trim(),
+      phone: _phoneController.text.trim(),
+      email: _emailController.text.trim(),
+      password: _passwordController.text,
+      role: _selectedRole,
+    );
 
     if (mounted) {
       setState(() {
         _isLoading = false;
       });
 
-      // Show success message
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Đăng ký thành công!'),
-          backgroundColor: AppTheme.success,
-        ),
-      );
+      if (success) {
+        // Show success message
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Đăng ký thành công!'),
+            backgroundColor: AppTheme.success,
+          ),
+        );
 
-      // Navigate to main screen
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => const MainScreen()),
-      );
+        // Navigate to main screen
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const MainScreen()),
+        );
+      } else {
+        // Show error message
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              authProvider.error?.replaceAll('Exception: ', '') ??
+                  'Đăng ký thất bại',
+            ),
+            backgroundColor: AppTheme.error,
+          ),
+        );
+      }
     }
   }
 
@@ -308,6 +345,67 @@ class _RegisterScreenState extends State<RegisterScreen>
                             }
                             return null;
                           },
+                        ),
+
+                        const SizedBox(height: 14),
+
+                        // Role Selection
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            border: Border.all(
+                              color: AppTheme.grey.withOpacity(0.3),
+                            ),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: DropdownButtonHideUnderline(
+                            child: DropdownButton<String>(
+                              value: _selectedRole,
+                              isExpanded: true,
+                              icon: const Icon(
+                                Icons.arrow_drop_down,
+                                color: AppTheme.primaryGreen,
+                              ),
+                              items: const [
+                                DropdownMenuItem(
+                                  value: 'customer',
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        Icons.person_outline,
+                                        color: AppTheme.primaryGreen,
+                                        size: 20,
+                                      ),
+                                      SizedBox(width: 12),
+                                      Text('Khách hàng'),
+                                    ],
+                                  ),
+                                ),
+                                DropdownMenuItem(
+                                  value: 'driver',
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        Icons.local_taxi,
+                                        color: AppTheme.primaryGreen,
+                                        size: 20,
+                                      ),
+                                      SizedBox(width: 12),
+                                      Text('Tài xế'),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                              onChanged: (String? newValue) {
+                                setState(() {
+                                  _selectedRole = newValue ?? 'customer';
+                                });
+                              },
+                            ),
+                          ),
                         ),
 
                         const SizedBox(height: 14),
