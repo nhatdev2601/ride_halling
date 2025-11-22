@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
+import '../services/auth_service.dart'; // ✅ Thêm import AuthService
+import '../models/auth_models.dart'; // ✅ Thêm import AuthModels
 import 'register_screen.dart';
 import 'main_screen.dart';
 
@@ -15,6 +17,7 @@ class _LoginScreenState extends State<LoginScreen>
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final AuthService _authService = AuthService(); // ✅ Thêm AuthService
 
   bool _obscurePassword = true;
   bool _isLoading = false;
@@ -63,23 +66,74 @@ class _LoginScreenState extends State<LoginScreen>
   }
 
   Future<void> _login() async {
+    // ✅ Kiểm tra validation trước
+    if (!_formKey.currentState!.validate()) {
+      return;
+    }
+
     setState(() {
       _isLoading = true;
     });
 
-    // Simulate login API call
-    await Future.delayed(const Duration(seconds: 1));
-
-    if (mounted) {
-      setState(() {
-        _isLoading = false;
-      });
-
-      // Navigate to main screen
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => const MainScreen()),
+    try {
+      // ✅ Gọi API login thật
+      final response = await _authService.login(
+        LoginRequest(
+          email: _emailController.text.trim(),
+          password: _passwordController.text,
+        ),
       );
+
+      if (!mounted) return;
+
+      // ✅ Nếu login thành công, chuyển màn hình
+      if (response != null) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const MainScreen()),
+        );
+
+        // ✅ Hiển thị thông báo thành công
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Đăng nhập thành công! Xin chào ${response.user.fullName}',
+            ),
+            backgroundColor: AppTheme.success,
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+
+      // ✅ Hiển thị lỗi chi tiết
+      String errorMessage = 'Đăng nhập thất bại';
+
+      if (e.toString().contains('Invalid credentials')) {
+        errorMessage = 'Email hoặc mật khẩu không đúng';
+      } else if (e.toString().contains('SocketException') ||
+          e.toString().contains('Connection')) {
+        errorMessage =
+            'Không thể kết nối đến server. Vui lòng kiểm tra kết nối mạng.';
+      } else if (e.toString().contains('TimeoutException')) {
+        errorMessage = 'Kết nối quá lâu. Vui lòng thử lại.';
+      } else {
+        errorMessage = 'Lỗi: ${e.toString()}';
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(errorMessage),
+          backgroundColor: AppTheme.error,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
@@ -210,8 +264,7 @@ class _LoginScreenState extends State<LoginScreen>
                               controller: _emailController,
                               keyboardType: TextInputType.emailAddress,
                               decoration: InputDecoration(
-                                labelText: 'Email',
-                                hintText: 'example@email.com',
+                                labelText: 'Email',    
                                 prefixIcon: const Icon(
                                   Icons.email_outlined,
                                   color: AppTheme.primaryGreen,
@@ -253,8 +306,7 @@ class _LoginScreenState extends State<LoginScreen>
                               controller: _passwordController,
                               obscureText: _obscurePassword,
                               decoration: InputDecoration(
-                                labelText: 'Mật khẩu',
-                                hintText: '••••••••',
+                                labelText: 'Mật khẩu',   
                                 prefixIcon: const Icon(
                                   Icons.lock_outline,
                                   color: AppTheme.primaryGreen,

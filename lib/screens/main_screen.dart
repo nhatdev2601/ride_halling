@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
+import '../services/auth_service.dart'; // ✅ Thêm import AuthService
 import 'home_screen.dart';
 import 'trip_history_screen.dart';
 import 'payment_screen.dart';
+import 'login_screen.dart'; // ✅ Thêm import LoginScreen
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
@@ -51,11 +53,21 @@ class _MainScreenState extends State<MainScreen> {
   }
 }
 
-class ProfileScreen extends StatelessWidget {
+class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
 
   @override
+  State<ProfileScreen> createState() => _ProfileScreenState();
+}
+
+class _ProfileScreenState extends State<ProfileScreen> {
+  final AuthService _authService = AuthService(); // ✅ Thêm AuthService
+  bool _isLoading = false; // ✅ Thêm loading state
+
+  @override
   Widget build(BuildContext context) {
+    final user = _authService.currentUser; // ✅ Lấy thông tin user
+
     return Scaffold(
       backgroundColor: AppTheme.lightGrey,
       appBar: AppBar(
@@ -80,9 +92,10 @@ class ProfileScreen extends StatelessWidget {
                   CircleAvatar(
                     radius: 30,
                     backgroundColor: AppTheme.primaryGreen.withOpacity(0.1),
-                    child: const Text(
-                      'NV',
-                      style: TextStyle(
+                    child: Text(
+                      user?.fullName.substring(0, 2).toUpperCase() ??
+                          'NV', // ✅ Lấy từ user
+                      style: const TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.bold,
                         color: AppTheme.primaryGreen,
@@ -90,26 +103,32 @@ class ProfileScreen extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: 16),
-                  const Expanded(
+                  Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Vo Truong Nhat',
-                          style: TextStyle(
+                          user?.fullName ?? 'Vo Truong Nhat', //  Lấy từ user
+                          style: const TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
-                        SizedBox(height: 4),
+                        const SizedBox(height: 4),
                         Text(
-                          'vonhut@email.com',
-                          style: TextStyle(fontSize: 14, color: AppTheme.grey),
+                          user?.email ?? 'vonhut@email.com', //  Lấy từ user
+                          style: const TextStyle(
+                            fontSize: 14,
+                            color: AppTheme.grey,
+                          ),
                         ),
-                        SizedBox(height: 4),
+                        const SizedBox(height: 4),
                         Text(
-                          '0901234567',
-                          style: TextStyle(fontSize: 14, color: AppTheme.grey),
+                          user?.phone ?? '0901234567', //  Lấy từ user
+                          style: const TextStyle(
+                            fontSize: 14,
+                            color: AppTheme.grey,
+                          ),
                         ),
                       ],
                     ),
@@ -202,9 +221,9 @@ class ProfileScreen extends StatelessWidget {
               margin: const EdgeInsets.symmetric(horizontal: 16),
               width: double.infinity,
               child: OutlinedButton(
-                onPressed: () {
-                  _showLogoutDialog(context);
-                },
+                onPressed: _isLoading
+                    ? null
+                    : () => _showLogoutDialog(context), // ✅ Disable khi loading
                 style: OutlinedButton.styleFrom(
                   foregroundColor: AppTheme.error,
                   side: const BorderSide(color: AppTheme.error),
@@ -213,10 +232,23 @@ class ProfileScreen extends StatelessWidget {
                     borderRadius: BorderRadius.circular(12),
                   ),
                 ),
-                child: const Text(
-                  'Đăng xuất',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                ),
+                child:
+                    _isLoading // ✅ Hiển thị loading khi đang logout
+                    ? const SizedBox(
+                        height: 20,
+                        width: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: AppTheme.error,
+                        ),
+                      )
+                    : const Text(
+                        'Đăng xuất',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
               ),
             ),
 
@@ -276,9 +308,9 @@ class ProfileScreen extends StatelessWidget {
             child: const Text('Hủy'),
           ),
           ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              // Handle logout
+            onPressed: () async {
+              Navigator.pop(context); // ✅ Đóng dialog
+              await _handleLogout(); // ✅ Gọi hàm logout
             },
             style: ElevatedButton.styleFrom(backgroundColor: AppTheme.error),
             child: const Text('Đăng xuất'),
@@ -286,5 +318,44 @@ class ProfileScreen extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  // ✅ Hàm xử lý logout
+  Future<void> _handleLogout() async {
+    setState(() => _isLoading = true);
+
+    try {
+      // ✅ Gọi API logout
+      await _authService.logout();
+
+      if (!mounted) return;
+
+      // ✅ Chuyển về màn hình login và xóa toàn bộ stack
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (context) => const LoginScreen()),
+        (route) => false,
+      );
+
+      // ✅ Hiển thị thông báo thành công
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Đăng xuất thành công'),
+          backgroundColor: AppTheme.primaryGreen,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() => _isLoading = false);
+
+      // ✅ Hiển thị lỗi
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Lỗi đăng xuất: $e'),
+          backgroundColor: AppTheme.error,
+        ),
+      );
+    }
   }
 }
