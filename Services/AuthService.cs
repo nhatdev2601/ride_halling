@@ -181,10 +181,10 @@ namespace api_ride.Services
             {
                 // Revoke the specific refresh token
                 await _cassandraService.RevokeRefreshTokenAsync(refreshToken);
-                
+
                 // Optionally revoke all user's refresh tokens for complete logout
                 // await _cassandraService.RevokeAllUserRefreshTokensAsync(userId);
-                
+
                 _logger.LogInformation("User {UserId} logged out successfully", userId);
                 return true;
             }

@@ -25,7 +25,7 @@ namespace api_ride.Controllers
             try
             {
                 // Simple validation
-                if (string.IsNullOrWhiteSpace(request.Email) || 
+                if (string.IsNullOrWhiteSpace(request.Email) ||
                     string.IsNullOrWhiteSpace(request.Password) ||
                     string.IsNullOrWhiteSpace(request.FullName) ||
                     string.IsNullOrWhiteSpace(request.Phone) ||
@@ -226,7 +226,7 @@ namespace api_ride.Controllers
         {
             try
             {
-                if (string.IsNullOrWhiteSpace(request.CurrentPassword) || 
+                if (string.IsNullOrWhiteSpace(request.CurrentPassword) ||
                     string.IsNullOrWhiteSpace(request.NewPassword))
                 {
                     return BadRequest(new { message = "Current password and new password are required" });
@@ -264,14 +264,14 @@ namespace api_ride.Controllers
                 var role = User.FindFirstValue(ClaimTypes.Role);
                 var name = User.FindFirstValue(ClaimTypes.Name);
 
-                return Ok(new 
-                { 
-                    valid = true, 
-                    userId, 
-                    email, 
+                return Ok(new
+                {
+                    valid = true,
+                    userId,
+                    email,
                     role,
                     name,
-                    message = "Token is valid" 
+                    message = "Token is valid"
                 });
             }
             catch (Exception ex)
