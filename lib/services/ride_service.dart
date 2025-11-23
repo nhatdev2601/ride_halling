@@ -1,0 +1,154 @@
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import '../models/ride_models.dart';
+import 'auth_service.dart';
+
+import '../config/config.dart';
+
+class RideService {
+  static const String baseUrl =
+      '${AppConfig.baseUrl}/api/Rides'; // Android Emulator
+  // static const String baseUrl = 'http://localhost:5267/api/Rides'; // iOS Simulator
+
+  final AuthService _authService = AuthService();
+
+  // 🧮 Tính giá cước
+  Future<CalculateFareResponse?> calculateFare(
+    CalculateFareRequest request,
+  ) async {
+    try {
+      print('========================================');
+      print('📤 GỬI REQUEST TÍNH GIÁ');
+      print('========================================');
+      print('URL: $baseUrl/calculate-fare');
+      print('Body: ${jsonEncode(request.toJson())}');
+      print('========================================\n');
+
+      final token = await _authService.getAccessToken();
+
+      final response = await http
+          .post(
+            Uri.parse('$baseUrl/calculate-fare'),
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $token',
+            },
+            body: jsonEncode(request.toJson()),
+          )
+          .timeout(const Duration(seconds: 10));
+
+      print('========================================');
+      print('📥 NHẬN RESPONSE');
+      print('========================================');
+      print('Status: ${response.statusCode}');
+      print('Body: ${response.body}');
+      print('========================================\n');
+
+      if (response.statusCode == 200) {
+        final json = jsonDecode(response.body);
+        return CalculateFareResponse.fromJson(json);
+      } else {
+        print('❌ Lỗi: ${response.statusCode} - ${response.body}');
+        return null;
+      }
+    } catch (e) {
+      print('❌ Exception: $e');
+      return null;
+    }
+  }
+
+  // 🚗 Đặt xe
+  Future<CreateRideResponse?> bookRide(CreateRideRequest request) async {
+    try {
+      print('========================================');
+      print('📤 GỬI REQUEST ĐẶT XE');
+      print('========================================');
+      print('URL: $baseUrl/book');
+      print('Body: ${jsonEncode(request.toJson())}');
+      print('========================================\n');
+
+      final token = await _authService.getAccessToken();
+      // 👇 THÊM DÒNG NÀY ĐỂ CHECK
+      print('🔑 TOKEN CỦA TAO LÀ: $token'); 
+
+      if (token == null || token.isEmpty) {
+          print('❌ CHẾT MẸ RỒI, TOKEN BỊ NULL!');
+          return null;
+      }
+      final response = await http
+          .post(
+            Uri.parse('$baseUrl/book'),
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $token',
+            },
+            body: jsonEncode(request.toJson()),
+          )
+          .timeout(const Duration(seconds: 15));
+
+      print('========================================');
+      print('📥 NHẬN RESPONSE ĐẶT XE');
+      print('========================================');
+      print('Status: ${response.statusCode}');
+      print('Body: ${response.body}');
+      print('========================================\n');
+
+      if (response.statusCode == 200) {
+        final json = jsonDecode(response.body);
+        return CreateRideResponse.fromJson(json);
+      } else {
+        print('❌ Lỗi: ${response.statusCode} - ${response.body}');
+        return null;
+      }
+    } catch (e) {
+      print('❌ Exception: $e');
+      return null;
+    }
+  }
+
+  // 📍 Lấy thông tin ride
+  Future<RideDetail?> getRide(String rideId) async {
+    try {
+      final token = await _authService.getAccessToken();
+
+      final response = await http
+          .get(
+            Uri.parse('$baseUrl/$rideId'),
+            headers: {'Authorization': 'Bearer $token'},
+          )
+          .timeout(const Duration(seconds: 5));
+
+      if (response.statusCode == 200) {
+        final json = jsonDecode(response.body);
+        return RideDetail.fromJson(json);
+      }
+      return null;
+    } catch (e) {
+      print('❌ Exception: $e');
+      return null;
+    }
+  }
+
+  // ❌ Hủy chuyến xe
+  Future<bool> cancelRide(String rideId, String reason) async {
+    try {
+      final token = await _authService.getAccessToken();
+
+      final response = await http
+          .put(
+            Uri.parse('$baseUrl/$rideId/status'),
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $token',
+            },
+            body: jsonEncode({'status': 'cancelled', 'reason': reason}),
+          )
+          .timeout(const Duration(seconds: 5));
+
+      return response.statusCode == 200;
+    } catch (e) {
+      print('❌ Exception: $e');
+      return false;
+    }
+  }
+}

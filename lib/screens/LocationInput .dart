@@ -404,7 +404,7 @@ class _HomeScreenState extends State<HomeScreen> {
             right: 0,
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: BottomBookButton(onPressed: _onBookRide),
+               child: BottomBookButton(onPressed: _onBookRide),
             ),
           ),
 

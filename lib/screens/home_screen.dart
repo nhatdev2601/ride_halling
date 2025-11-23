@@ -1,15 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:geolocator/geolocator.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
 import 'dart:async';
 import '../theme/app_theme.dart';
-import '../widgets/bottom_book_button.dart';
-import 'vehicle_selection_screen.dart';
-import 'package:flutter/foundation.dart';
-import 'package:flutter/gestures.dart';
+import '../services/location_service.dart';
+import '../services/ride_service.dart';
+import '../models/ride_models.dart';
 import 'location_search_screen.dart';
+import 'vehicle_selection_map_screen.dart'; // ✅ Dùng màn hình có sẵn
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -37,147 +34,17 @@ class _HomeScreenState extends State<HomeScreen> {
   final TextEditingController _pickupController = TextEditingController();
   final TextEditingController _destinationController = TextEditingController();
 
-  List<Map<String, dynamic>> _pickupSuggestions = [];
-  List<Map<String, dynamic>> _destinationSuggestions = [];
+  List<PlaceSuggestion> _pickupSuggestions = [];
+  List<PlaceSuggestion> _destinationSuggestions = [];
   bool _showPickupSuggestions = false;
   bool _showDestinationSuggestions = false;
 
   String _distance = '';
   String _duration = '';
   String _fare = '';
-  String _selectedVehicleType = 'car';
-  bool _showVehicleOptions = false;
 
-  static const String GOONG_API_KEY =
-      'pvIfGgG2YHiLHSQgg3WRGo4NVK0RDabyqH9k1HQQ';
-
-  Future<LatLng?> _geocodeAddress(String address) async {
-    if (address.isEmpty) return null;
-
-    try {
-      final String url =
-          'https://rsapi.goong.io/geocode?address=${Uri.encodeComponent(address)}&api_key=$GOONG_API_KEY';
-
-      final response = await http
-          .get(Uri.parse(url))
-          .timeout(const Duration(seconds: 10));
-
-      if (response.statusCode == 200) {
-        final json = jsonDecode(response.body);
-
-        if (json['results'] != null && json['results'].isNotEmpty) {
-          final location = json['results'][0]['geometry']['location'];
-          return LatLng(location['lat'], location['lng']);
-        }
-      }
-    } catch (e) {
-      print('Lỗi geocode: $e');
-    }
-    return null;
-  }
-
-  Future<List<Map<String, dynamic>>> _getPlaceSuggestions(String input) async {
-    if (input.isEmpty) return [];
-
-    try {
-      final String url =
-          'https://rsapi.goong.io/Place/AutoComplete?input=${Uri.encodeComponent(input)}&api_key=$GOONG_API_KEY';
-
-      final response = await http
-          .get(Uri.parse(url))
-          .timeout(const Duration(seconds: 5));
-
-      if (response.statusCode == 200) {
-        final json = jsonDecode(response.body);
-
-        if (json['predictions'] != null) {
-          return List<Map<String, dynamic>>.from(json['predictions']);
-        }
-      }
-    } catch (e) {
-      print('Lỗi lấy gợi ý: $e');
-    }
-    return [];
-  }
-
-  Future<void> _getRoute() async {
-    if (_pickupLatLng == null || _destinationLatLng == null) return;
-
-    try {
-      final String url =
-          'https://rsapi.goong.io/Direction?origin=${_pickupLatLng!.latitude},${_pickupLatLng!.longitude}&destination=${_destinationLatLng!.latitude},${_destinationLatLng!.longitude}&vehicle=car&api_key=$GOONG_API_KEY';
-
-      final response = await http
-          .get(Uri.parse(url))
-          .timeout(const Duration(seconds: 10));
-
-      if (response.statusCode == 200) {
-        final json = jsonDecode(response.body);
-
-        if (json['routes'] != null && json['routes'].isNotEmpty) {
-          final route = json['routes'][0];
-          final legs = route['legs'] as List;
-
-          List<LatLng> polylinePoints = [];
-          double totalDistance = 0;
-          double totalDuration = 0;
-
-          for (var leg in legs) {
-            final steps = leg['steps'] as List;
-
-            if (leg['distance'] != null) {
-              totalDistance += (leg['distance']['value'] ?? 0) / 1000;
-            }
-            if (leg['duration'] != null) {
-              totalDuration += (leg['duration']['value'] ?? 0);
-            }
-
-            for (var step in steps) {
-              final startLoc = step['start_location'];
-              polylinePoints.add(LatLng(startLoc['lat'], startLoc['lng']));
-
-              final endLoc = step['end_location'];
-              polylinePoints.add(LatLng(endLoc['lat'], endLoc['lng']));
-            }
-          }
-
-          String distanceStr = totalDistance > 0
-              ? '${totalDistance.toStringAsFixed(1)} km'
-              : 'N/A';
-
-          int minutes = (totalDuration / 60).toInt();
-          String durationStr = minutes > 0
-              ? '$minutes phút'
-              : '${totalDuration.toInt()}s';
-
-          double fareAmount = 0;
-          if (totalDistance <= 5) {
-            fareAmount = (totalDistance * 1000 / 100) * 1100;
-          } else {
-            fareAmount = (totalDistance * 1000 / 100) * 1000;
-          }
-          String fareStr = '${fareAmount.toStringAsFixed(0)} VND';
-
-          setState(() {
-            _distance = distanceStr;
-            _duration = durationStr;
-            _fare = fareStr;
-            _polylines = {
-              Polyline(
-                polylineId: const PolylineId('route'),
-                points: polylinePoints,
-                color: AppTheme.primaryGreen,
-                width: 5,
-                geodesic: true,
-              ),
-            };
-          });
-        }
-      }
-    } catch (e) {
-      print('Lỗi lấy route: $e');
-    }
-  }
+  final LocationService _locationService = LocationService();
+  final RideService _rideService = RideService();
 
   void _showError(String message) {
     if (mounted) {
@@ -192,41 +59,46 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _getCurrentLocation() async {
-    bool serviceEnabled;
-    LocationPermission permission;
+    final result = await _locationService.getCurrentLocation();
 
-    serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) {
-      _showError('Vui lòng bật GPS để lấy vị trí.');
-      return;
-    }
-
-    permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-      if (permission == LocationPermission.denied) return;
-    }
-
-    if (permission == LocationPermission.deniedForever) {
-      _showError('Ứng dụng bị từ chối quyền truy cập vị trí.');
-      return;
-    }
-
-    try {
-      Position position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-      );
-
+    if (result.success && result.location != null) {
       setState(() {
-        _currentPosition = LatLng(position.latitude, position.longitude);
+        _currentPosition = result.location!;
+        _pickupLocation = result.address ?? 'Vị trí hiện tại';
+        _pickupController.text = result.address ?? 'Vị trí hiện tại';
+        _pickupLatLng = result.location;
       });
+
+      print('========================================');
+      print('📍 VỊ TRÍ HIỆN TẠI (Điểm đi)');
+      print('========================================');
+      print('Latitude:  ${result.location!.latitude}');
+      print('Longitude: ${result.location!.longitude}');
+      print('Địa chỉ:   ${result.address}');
+      print('========================================\n');
 
       _mapController?.animateCamera(
         CameraUpdate.newLatLngZoom(_currentPosition, 15),
       );
-    } catch (e) {
-      _showError('Lỗi lấy vị trí: ${e.toString()}');
+    } else {
+      _showError(result.errorMessage ?? 'Không thể lấy vị trí');
     }
+  }
+
+  Future<void> _getPickupSuggestions(String input) async {
+    final suggestions = await _locationService.getPlaceSuggestions(input);
+    setState(() {
+      _pickupSuggestions = suggestions;
+      _showPickupSuggestions = suggestions.isNotEmpty;
+    });
+  }
+
+  Future<void> _getDestinationSuggestions(String input) async {
+    final suggestions = await _locationService.getPlaceSuggestions(input);
+    setState(() {
+      _destinationSuggestions = suggestions;
+      _showDestinationSuggestions = suggestions.isNotEmpty;
+    });
   }
 
   void _updateRoute() {
@@ -248,8 +120,10 @@ class _HomeScreenState extends State<HomeScreen> {
         _isLoadingRoute = true;
       });
 
-      _pickupLatLng = await _geocodeAddress(_pickupLocation);
-      _destinationLatLng = await _geocodeAddress(_destinationLocation);
+      _pickupLatLng = await _locationService.geocodeAddress(_pickupLocation);
+      _destinationLatLng = await _locationService.geocodeAddress(
+        _destinationLocation,
+      );
 
       if (_pickupLatLng != null && _destinationLatLng != null) {
         setState(() {
@@ -273,7 +147,28 @@ class _HomeScreenState extends State<HomeScreen> {
           };
         });
 
-        await _getRoute();
+        double distance = _locationService.calculateDistance(
+          _pickupLatLng!,
+          _destinationLatLng!,
+        );
+        setState(() {
+          _distance = '${distance.toStringAsFixed(1)} km';
+        });
+
+        print('========================================');
+        print('🚗 DỮ LIỆU GỬI LÊN SERVER (JSON)');
+        print('========================================');
+        print('{');
+        print('  "pickupLat": ${_pickupLatLng!.latitude},');
+        print('  "pickupLng": ${_pickupLatLng!.longitude},');
+        print('  "destinationLat": ${_destinationLatLng!.latitude},');
+        print('  "destinationLng": ${_destinationLatLng!.longitude},');
+        print('  "distance": ${distance.toStringAsFixed(2)},');
+        print('  "pickupAddress": "$_pickupLocation",');
+        print('  "destinationAddress": "$_destinationLocation"');
+        print('}');
+        print('========================================\n');
+
         _zoomToFitMarkers();
       } else {
         _showError('Không thể tìm được một trong hai địa chỉ');
@@ -316,22 +211,6 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  void _onBookRide() {
-    if (_pickupLocation.isNotEmpty && _destinationLocation.isNotEmpty) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => VehicleSelectionScreen(
-            pickupLocation: _pickupLocation,
-            destinationLocation: _destinationLocation,
-          ),
-        ),
-      );
-    } else {
-      _showError('Vui lòng nhập điểm đi và điểm đến');
-    }
-  }
-
   void _handlePickupChange(String value) {
     _pickupLocation = value;
     _updateRoute();
@@ -361,37 +240,25 @@ class _HomeScreenState extends State<HomeScreen> {
     _updateRoute();
   }
 
-  Future<void> _getPickupSuggestions(String input) async {
-    final suggestions = await _getPlaceSuggestions(input);
-    setState(() {
-      _pickupSuggestions = suggestions;
-      _showPickupSuggestions = suggestions.isNotEmpty;
-    });
-  }
-
-  Future<void> _getDestinationSuggestions(String input) async {
-    final suggestions = await _getPlaceSuggestions(input);
-    setState(() {
-      _destinationSuggestions = suggestions;
-      _showDestinationSuggestions = suggestions.isNotEmpty;
-    });
-  }
-
-  double _calculateFareByType(String vehicleType) {
-    double distance = double.tryParse(_distance.split(' ')[0]) ?? 0;
-
-    if (vehicleType == 'bike') {
-      return (distance * 1000 / 100) * 500;
-    } else if (vehicleType == 'car') {
-      if (distance <= 5) {
-        return (distance * 1000 / 100) * 1100;
-      } else {
-        return (distance * 1000 / 100) * 1000;
-      }
-    } else if (vehicleType == 'delivery') {
-      return (distance * 1000 / 100) * 1000;
+  // ✅ Gọi API và chuyển sang màn hình chọn xe
+  Future<void> _onBookRide() async {
+    if (_pickupLatLng == null || _destinationLatLng == null) {
+      _showError('Vui lòng chọn điểm đi và điểm đến');
+      return;
     }
-    return 0;
+
+    // Chuyển sang màn hình chọn xe (dùng màn hình có sẵn)
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => VehicleSelectionMapScreen(
+          pickupAddress: _pickupLocation,
+          pickupLatLng: _pickupLatLng!,
+          destinationAddress: _destinationLocation,
+          destinationLatLng: _destinationLatLng!,
+        ),
+      ),
+    );
   }
 
   @override
@@ -415,32 +282,43 @@ class _HomeScreenState extends State<HomeScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            // Header
             _buildHeader(),
-
-            // Search Box
             _buildSearchBox(),
-
-            // Content
             Expanded(
               child: SingleChildScrollView(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const SizedBox(height: 20),
-
-                    // Service Icons
                     _buildServiceIcons(),
-
                     const SizedBox(height: 24),
-
-                    // Banner/Promotion
                     _buildPromotionBanner(),
-
                     const SizedBox(height: 24),
-
-                    // Voucher Section
                     _buildVoucherSection(),
+
+                    // ✅ Nút đặt xe
+                    if (_pickupLatLng != null && _destinationLatLng != null)
+                      Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: ElevatedButton(
+                          onPressed: _onBookRide,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppTheme.primaryGreen,
+                            minimumSize: const Size(double.infinity, 50),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          child: Text(
+                            'Đặt xe - Khoảng cách: $_distance',
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ),
 
                     const SizedBox(height: 100),
                   ],
@@ -701,31 +579,6 @@ class _HomeScreenState extends State<HomeScreen> {
           Text(
             condition,
             style: const TextStyle(color: Colors.white70, fontSize: 14),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildNavItem(IconData icon, String label, bool isActive) {
-    return InkWell(
-      onTap: () {},
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            icon,
-            color: isActive ? AppTheme.primaryGreen : Colors.grey,
-            size: 26,
-          ),
-          const SizedBox(height: 4),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 12,
-              color: isActive ? AppTheme.primaryGreen : Colors.grey,
-              fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
-            ),
           ),
         ],
       ),

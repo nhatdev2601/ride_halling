@@ -2,12 +2,11 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/auth_models.dart';
-
+import '../config/config.dart';
 class AuthService {
   // Đổi URL này thành URL backend của bạn
- // static const String baseUrl = 'http://10.0.2.2:5267/api/Auth';
-    static const String baseUrl = 'https://0fd6308b8362.ngrok-free.app/api/Auth';
- 
+  // static const String baseUrl = 'http://10.0.2.2:5267/api/Auth'; //đường link dành cho máy ảo Android
+  static const String baseUrl = '${AppConfig.baseUrl}/api/Auth'; //link dành cho máy thật sử dụng máy thật mới lấy được vị trí hiện tại chính xác
   String? _token;
   String? _refreshToken;
   UserDto? _currentUser;
@@ -173,32 +172,36 @@ class AuthService {
     }
   }
 
- // POST /api/Auth/logout
-Future<void> logout() async {
-  if (_refreshToken == null) {
-    await _clearTokens();
-    return;
-  }
-
-  try {
-    final response = await http.post(
-      Uri.parse('$baseUrl/logout'),
-      headers: _getHeaders(),
-      body: jsonEncode({'refreshToken': _refreshToken}), // ✅ Thêm refreshToken vào body
-    ).timeout(const Duration(seconds: 5));
-
-    if (response.statusCode == 200) {
-      print('Logout success');
-    } else {
-      print('Logout failed: ${response.body}');
+  // POST /api/Auth/logout
+  Future<void> logout() async {
+    if (_refreshToken == null) {
+      await _clearTokens();
+      return;
     }
-  } catch (e) {
-    print('Logout error (ignored): $e');
-  } finally {
-    // ✅ Luôn clear tokens dù API fail
-    await _clearTokens();
+
+    try {
+      final response = await http
+          .post(
+            Uri.parse('$baseUrl/logout'),
+            headers: _getHeaders(),
+            body: jsonEncode({
+              'refreshToken': _refreshToken,
+            }), // ✅ Thêm refreshToken vào body
+          )
+          .timeout(const Duration(seconds: 5));
+
+      if (response.statusCode == 200) {
+        print('Logout success');
+      } else {
+        print('Logout failed: ${response.body}');
+      }
+    } catch (e) {
+      print('Logout error (ignored): $e');
+    } finally {
+      // ✅ Luôn clear tokens dù API fail
+      await _clearTokens();
+    }
   }
-}
 
   // GET /api/Auth/profile
   Future<UserDto> getProfile() async {
@@ -317,5 +320,16 @@ Future<void> logout() async {
     } catch (e) {
       throw Exception('Lỗi khi thu hồi tokens: $e');
     }
+  }
+
+  // ✅ THÊM METHOD NÀY
+  Future<String?> getAccessToken() async {
+    if (_token != null) {
+      return _token;
+    }
+
+    // Load from SharedPreferences
+    await loadSavedAuth();
+    return _token;
   }
 }

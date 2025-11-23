@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:http/http.dart' as http;
+import 'package:ride_hailing/services/location_service_driver.dart';
 import 'dart:convert';
 import '../theme/app_theme.dart';
-
+import '../services/ride_service.dart';
+import '../models/ride_models.dart';
+import 'ride_tracking_screen.dart';
 class VehicleSelectionMapScreen extends StatefulWidget {
   final String pickupAddress;
   final LatLng pickupLatLng;
@@ -30,44 +33,161 @@ class _VehicleSelectionMapScreenState extends State<VehicleSelectionMapScreen> {
   String _distance = '';
   String _duration = '';
   bool _isLoading = true;
+  bool _isBooking = false;
+  double _tripDistance = 0.0;
+  final LocationServiceDriver _locationService = LocationServiceDriver();
+  final RideService _rideService = RideService();
+  CalculateFareResponse? _fareResponse;
+  String _selectedVehicleType = 'bike';
+
+  List<Map<String, dynamic>> _vehicles = [];
 
   static const String GOONG_API_KEY =
       'pvIfGgG2YHiLHSQgg3WRGo4NVK0RDabyqH9k1HQQ';
-
-  final List<Map<String, dynamic>> _vehicles = [
-    {
-      'name': 'Xanh Car',
-      'icon': '🚗',
-      'seats': 4,
-      'time': '5 phút',
-      'price': 17000,
-      'oldPrice': 34000,
-      'promo': 'Tiện lợi, giá hời',
-    },
-    {
-      'name': 'Business',
-      'icon': '🚙',
-      'seats': 4,
-      'time': '5 phút',
-      'price': 60000,
-      'oldPrice': null,
-      'promo': null,
-    },
-    {
-      'name': 'Xanh Bike',
-      'icon': '🏍️',
-      'seats': 1,
-      'time': '5 phút',
-      'price': 22000,
-      'oldPrice': null,
-      'promo': null,
-    },
-  ];
 
   @override
   void initState() {
     super.initState();
     _initMap();
+   // _calculateFare();
+  }
+
+  //  Gọi API tính giá
+  Future<void> _calculateFare(double distanceKm) async {
+    if (distanceKm <= 0) return;
+    _tripDistance = distanceKm;
+    try {
+      final request = CalculateFareRequest(
+        pickupLocation: LocationDto(
+          latitude: widget.pickupLatLng.latitude,
+          longitude: widget.pickupLatLng.longitude,
+          address: widget.pickupAddress,
+        ),
+        destinationLocation: LocationDto(
+          latitude: widget.destinationLatLng.latitude,
+          longitude: widget.destinationLatLng.longitude,
+          address: widget.destinationAddress,
+        ),
+        distance: distanceKm,
+        vehicleType: 'bike',
+      );
+
+      final fareResponse = await _rideService.calculateFare(request);
+
+      if (fareResponse != null && mounted) {
+        setState(() {
+          _fareResponse = fareResponse;
+          _vehicles = fareResponse.availableVehicles.map((v) {
+            return {
+              'name': v.displayName,
+              'icon': _getVehicleEmoji(v.vehicleType),
+              'seats': v.vehicleType == 'bike' ? 1 : 4,
+              'time': '${v.estimatedArrival} phút',
+              'price': v.totalFare.toInt(),
+              'oldPrice': null,
+              'promo': null,
+              'vehicleType': v.vehicleType,
+            };
+          }).toList();
+
+          if (_vehicles.isNotEmpty) {
+            _selectedVehicleType = _vehicles[0]['vehicleType'];
+          }
+        });
+      }
+    } catch (e) {
+      print('❌ Lỗi tính giá: $e');
+    }
+  }
+
+  String _getVehicleEmoji(String type) {
+    switch (type) {
+      case 'bike':
+        return '🏍️';
+      case 'car':
+        return '🚗';
+      case 'business':
+        return '🚙';
+      default:
+        return '🚗';
+    }
+  }
+
+
+  // ✅ Gọi API đặt xe (Bản nâng cấp: Có Dialog xoay + Chuyển màn hình)
+  Future<void> _bookRide() async {
+    if (_fareResponse == null) return;
+
+    // 1. Hiện Dialog "Đang tìm tài xế..." ngay lập tức
+    // (Không cần set _isBooking = true nữa vì dialog đã chặn người dùng bấm rồi)
+    _showFindingDriverDialog();
+
+    try {
+      // Tạo request (nhớ là đã có distance từ lúc tính giá)
+      final request = CreateRideRequest(
+        pickupLocation: LocationDto(
+          latitude: widget.pickupLatLng.latitude,
+          longitude: widget.pickupLatLng.longitude,
+          address: widget.pickupAddress,
+        ),
+        destinationLocation: LocationDto(
+          latitude: widget.destinationLatLng.latitude,
+          longitude: widget.destinationLatLng.longitude,
+          address: widget.destinationAddress,
+        ),
+        vehicleType: _selectedVehicleType,
+        paymentMethod: 'cash',
+        distance: _tripDistance, // Số km thực tế đã lưu
+      );
+
+      // Giả vờ delay 2 giây cho thầy cô kịp đọc chữ "Đang tìm..." (Tùy chọn)
+      await Future.delayed(const Duration(seconds: 2));
+
+      // Gọi API đặt xe
+      final response = await _rideService.bookRide(request);
+
+      // 2. TẮT DIALOG XOAY XOAY (Quan trọng: Phải kiểm tra mounted)
+      if (mounted) {
+        Navigator.of(context).pop(); 
+      }
+
+      // Xử lý kết quả
+      if (response != null) {
+        if (response.assignedDriver != null) {
+          // ✅ TRƯỜNG HỢP 1: TÌM THẤY TÀI XẾ
+          print("✅ Đã tìm thấy tài xế: ${response.assignedDriver!.fullName}");
+          
+          if (mounted) {
+            // Chuyển sang màn hình Tracking ngay lập tức
+            // Dùng pushReplacement để khách không bấm Back quay lại đặt tiếp được
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (context) => RideTrackingScreen(
+                  rideId: response.rideId,
+                  driverInfo: response.assignedDriver, // Truyền thông tin tài xế qua
+                ),
+              ),
+            );
+          }
+        } else {
+          // ❌ TRƯỜNG HỢP 2: ĐẶT ĐƯỢC NHƯNG KHÔNG CÓ TÀI XẾ (Null)
+          _showError("Hiện không có tài xế nào gần bạn (5km). Vui lòng thử lại!");
+        }
+      } else {
+        _showError('Lỗi kết nối. Vui lòng thử lại.');
+      }
+    } catch (e) {
+      // Nếu lỗi sập nguồn thì cũng phải nhớ tắt Dialog đi kẻo treo app
+      if (mounted) Navigator.of(context).pop();
+      _showError('Lỗi: ${e.toString()}');
+    }
+  }
+
+  void _showError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), backgroundColor: Colors.red),
+    );
   }
 
   Future<void> _initMap() async {
@@ -83,7 +203,7 @@ class _VehicleSelectionMapScreenState extends State<VehicleSelectionMapScreen> {
         icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
       ),
     };
-
+await _locationService.teleportDriverToLocation(widget.pickupLatLng);
     await _getRoute();
     setState(() {
       _isLoading = false;
@@ -141,7 +261,10 @@ class _VehicleSelectionMapScreenState extends State<VehicleSelectionMapScreen> {
               ),
             };
           });
-
+    print("📏 Khoảng cách thực tế (Goong): $totalDistance km");
+          
+          // Gọi hàm tính tiền với con số chính xác vừa lấy được
+          _calculateFare(totalDistance);
           _zoomToFitRoute();
         }
       }
@@ -182,13 +305,42 @@ class _VehicleSelectionMapScreenState extends State<VehicleSelectionMapScreen> {
       );
     });
   }
-
+// Hàm hiện Dialog đang tìm xe
+  void _showFindingDriverDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false, // Không cho bấm ra ngoài để tắt
+      builder: (BuildContext context) {
+        return Dialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),
+          child: Padding(
+            padding: const EdgeInsets.all(20.0),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const CircularProgressIndicator(color: AppTheme.primaryGreen), // Xoay xoay
+                const SizedBox(height: 20),
+                const Text(
+                  "Đang tìm tài xế gần bạn...",
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  "Vui lòng đợi trong giây lát",
+                  style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: Stack(
         children: [
-          // Google Map
           GoogleMap(
             initialCameraPosition: CameraPosition(
               target: widget.pickupLatLng,
@@ -277,15 +429,6 @@ class _VehicleSelectionMapScreenState extends State<VehicleSelectionMapScreen> {
                           ],
                         ),
                       ),
-                      Column(
-                        children: [
-                          const Icon(
-                            Icons.swap_vert,
-                            color: AppTheme.primaryGreen,
-                          ),
-                          const Icon(Icons.add, color: AppTheme.primaryGreen),
-                        ],
-                      ),
                     ],
                   ),
                 ],
@@ -341,22 +484,24 @@ class _VehicleSelectionMapScreenState extends State<VehicleSelectionMapScreen> {
                     ),
                     const SizedBox(height: 16),
                     Expanded(
-                      child: ListView.separated(
-                        controller: scrollController,
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        itemCount: _vehicles.length + 2,
-                        separatorBuilder: (context, index) => const Divider(),
-                        itemBuilder: (context, index) {
-                          if (index == 0) {
-                            return _buildPromoBanner();
-                          }
-                          if (index == _vehicles.length + 1) {
-                            return _buildAddNote();
-                          }
-                          final vehicle = _vehicles[index - 1];
-                          return _buildVehicleItem(vehicle);
-                        },
-                      ),
+                      child: _vehicles.isEmpty
+                          ? const Center(child: CircularProgressIndicator())
+                          : ListView.separated(
+                              controller: scrollController,
+                              padding: const EdgeInsets.symmetric(horizontal: 16),
+                              itemCount: _vehicles.length + 2,
+                              separatorBuilder: (context, index) => const Divider(),
+                              itemBuilder: (context, index) {
+                                if (index == 0) {
+                                  return _buildPromoBanner();
+                                }
+                                if (index == _vehicles.length + 1) {
+                                  return _buildAddNote();
+                                }
+                                final vehicle = _vehicles[index - 1];
+                                return _buildVehicleItem(vehicle);
+                              },
+                            ),
                     ),
                     _buildBookButton(),
                   ],
@@ -364,26 +509,22 @@ class _VehicleSelectionMapScreenState extends State<VehicleSelectionMapScreen> {
               );
             },
           ),
-
-          // Current Location Button
-          Positioned(
-            right: 16,
-            bottom: MediaQuery.of(context).size.height * 0.5 + 20,
-            child: FloatingActionButton(
-              mini: true,
-              backgroundColor: Colors.white,
-              onPressed: () {},
-              child: const Icon(Icons.my_location, color: Colors.black),
-            ),
-          ),
         ],
       ),
     );
   }
 
   Widget _buildVehicleItem(Map<String, dynamic> vehicle) {
+    final isSelected = vehicle['vehicleType'] == _selectedVehicleType;
+
     return ListTile(
       contentPadding: EdgeInsets.zero,
+      onTap: () {
+        setState(() {
+          _selectedVehicleType = vehicle['vehicleType'];
+        });
+      },
+      tileColor: isSelected ? AppTheme.primaryGreen.withOpacity(0.1) : null,
       leading: Container(
         width: 60,
         height: 60,
@@ -401,49 +542,12 @@ class _VehicleSelectionMapScreenState extends State<VehicleSelectionMapScreen> {
             vehicle['name'],
             style: const TextStyle(fontWeight: FontWeight.bold),
           ),
-          const SizedBox(width: 8),
-          const Icon(Icons.info_outline, size: 16, color: Colors.grey),
         ],
       ),
-      subtitle: Row(
-        children: [
-          Icon(Icons.person, size: 14, color: Colors.grey[600]),
-          Text(
-            ' ${vehicle['seats']} • ',
-            style: TextStyle(color: Colors.grey[600]),
-          ),
-          Icon(Icons.bolt, size: 14, color: Colors.orange),
-          Text(
-            ' Đón trong ${vehicle['time']}',
-            style: TextStyle(color: Colors.grey[600]),
-          ),
-          if (vehicle['promo'] != null) ...[
-            const SizedBox(width: 8),
-            Text(
-              vehicle['promo'],
-              style: const TextStyle(color: AppTheme.primaryGreen),
-            ),
-          ],
-        ],
-      ),
-      trailing: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          Text(
-            '${vehicle['price']}đ',
-            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-          ),
-          if (vehicle['oldPrice'] != null)
-            Text(
-              '${vehicle['oldPrice']}đ',
-              style: TextStyle(
-                decoration: TextDecoration.lineThrough,
-                color: Colors.grey[400],
-                fontSize: 12,
-              ),
-            ),
-        ],
+      subtitle: Text('Đón trong ${vehicle['time']}'),
+      trailing: Text(
+        '${vehicle['price']}đ',
+        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
       ),
     );
   }
@@ -456,11 +560,11 @@ class _VehicleSelectionMapScreenState extends State<VehicleSelectionMapScreen> {
         color: Colors.grey[100],
         borderRadius: BorderRadius.circular(12),
       ),
-      child: Row(
+      child: const Row(
         children: [
-          const Icon(Icons.discount, color: Colors.orange),
-          const SizedBox(width: 12),
-          const Expanded(
+          Icon(Icons.discount, color: Colors.orange),
+          SizedBox(width: 12),
+          Expanded(
             child: Text(
               'Tiền mặt     🎟️ Ưu đãi giảm 50% tối đa 50,000 VND',
               style: TextStyle(fontSize: 13),
@@ -472,10 +576,10 @@ class _VehicleSelectionMapScreenState extends State<VehicleSelectionMapScreen> {
   }
 
   Widget _buildAddNote() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 12),
+    return const Padding(
+      padding: EdgeInsets.symmetric(vertical: 12),
       child: Row(
-        children: const [
+        children: [
           Icon(Icons.note_add_outlined, color: Colors.grey),
           SizedBox(width: 12),
           Text(
@@ -501,40 +605,19 @@ class _VehicleSelectionMapScreenState extends State<VehicleSelectionMapScreen> {
         ],
       ),
       child: SafeArea(
-        child: Row(
-          children: [
-            Expanded(
-              child: OutlinedButton(
-                onPressed: () {},
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  side: const BorderSide(color: AppTheme.primaryGreen),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                child: const Text(
-                  'XanhNow',
-                  style: TextStyle(
-                    color: AppTheme.primaryGreen,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
+        child: ElevatedButton(
+          onPressed: _isBooking ? null : _bookRide,
+          style: ElevatedButton.styleFrom(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            backgroundColor: AppTheme.primaryGreen,
+            minimumSize: const Size(double.infinity, 50),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              flex: 2,
-              child: ElevatedButton(
-                onPressed: () {},
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  backgroundColor: AppTheme.primaryGreen,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                child: const Text(
+          ),
+          child: _isBooking
+              ? const CircularProgressIndicator(color: Colors.white)
+              : const Text(
                   'Đặt xe',
                   style: TextStyle(
                     color: Colors.white,
@@ -542,11 +625,9 @@ class _VehicleSelectionMapScreenState extends State<VehicleSelectionMapScreen> {
                     fontSize: 16,
                   ),
                 ),
-              ),
-            ),
-          ],
         ),
       ),
     );
   }
 }
+
