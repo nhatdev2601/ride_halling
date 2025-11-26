@@ -65,7 +65,7 @@ class _HomeScreenState extends State<HomeScreen> {
       setState(() {
         _currentPosition = result.location!;
         _pickupLocation = result.address ?? 'Vị trí hiện tại';
-        _pickupController.text = result.address ?? 'Vị trí hiện tại';
+        //_pickupController.text = result.address ?? 'Vị trí hiện tại';
         _pickupLatLng = result.location;
       });
 

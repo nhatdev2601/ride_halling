@@ -160,7 +160,7 @@ class _VehicleSelectionMapScreenState extends State<VehicleSelectionMapScreen> {
           if (mounted) {
             // Chuyển sang màn hình Tracking ngay lập tức
             // Dùng pushReplacement để khách không bấm Back quay lại đặt tiếp được
-            Navigator.pushReplacement(
+            Navigator.push(
               context,
               MaterialPageRoute(
                 builder: (context) => RideTrackingScreen(
@@ -514,41 +514,121 @@ await _locationService.teleportDriverToLocation(widget.pickupLatLng);
     );
   }
 
-  Widget _buildVehicleItem(Map<String, dynamic> vehicle) {
+Widget _buildVehicleItem(Map<String, dynamic> vehicle) {
     final isSelected = vehicle['vehicleType'] == _selectedVehicleType;
 
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
+    return GestureDetector(
+      // 👇 QUAN TRỌNG: Dòng này giúp bấm vào chỗ trắng cũng ăn
+      behavior: HitTestBehavior.opaque, 
+      
       onTap: () {
+        print("👉 Đã chọn xe: ${vehicle['vehicleType']}");
         setState(() {
           _selectedVehicleType = vehicle['vehicleType'];
         });
       },
-      tileColor: isSelected ? AppTheme.primaryGreen.withOpacity(0.1) : null,
-      leading: Container(
-        width: 60,
-        height: 60,
+      child: Container(
+        margin: const EdgeInsets.symmetric(vertical: 6),
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
         decoration: BoxDecoration(
-          color: AppTheme.primaryGreen.withOpacity(0.1),
+          // Màu nền thay đổi rõ hơn khi chọn
+          color: isSelected ? AppTheme.primaryGreen.withOpacity(0.1) : Colors.white,
           borderRadius: BorderRadius.circular(12),
-        ),
-        child: Center(
-          child: Text(vehicle['icon'], style: const TextStyle(fontSize: 32)),
-        ),
-      ),
-      title: Row(
-        children: [
-          Text(
-            vehicle['name'],
-            style: const TextStyle(fontWeight: FontWeight.bold),
+          border: Border.all(
+            // Viền xanh đậm khi chọn
+            color: isSelected ? AppTheme.primaryGreen : Colors.grey.withOpacity(0.2),
+            width: isSelected ? 2 : 1,
           ),
-        ],
+          boxShadow: [
+            if (!isSelected) // Chỉ hiện bóng mờ khi chưa chọn cho đỡ rối
+              BoxShadow(
+                color: Colors.black.withOpacity(0.03),
+                blurRadius: 4,
+                offset: const Offset(0, 2),
+              )
+          ],
+        ),
+        child: Row(
+          children: [
+            // Icon Xe
+            Container(
+              width: 50,
+              height: 50,
+              decoration: BoxDecoration(
+                color: Colors.grey[100],
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Center(
+                child: Text(vehicle['icon'], style: const TextStyle(fontSize: 28)),
+              ),
+            ),
+            const SizedBox(width: 16),
+            
+            // Thông tin xe
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    vehicle['name'],
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                      color: isSelected ? AppTheme.primaryGreen : Colors.black87,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      const Icon(Icons.access_time, size: 14, color: Colors.grey),
+                      const SizedBox(width: 4),
+                      Text(
+                        "Đón trong ${vehicle['time']}", // Sửa lại text cho gọn
+                        style: const TextStyle(fontSize: 13, color: Colors.grey),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+
+            // Giá tiền (Đã format đẹp)
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  '${formatMoney(vehicle['price'])}đ', // 👇 Gọi hàm format ở đây
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold, 
+                    fontSize: 16,
+                    color: isSelected ? AppTheme.primaryGreen : Colors.black,
+                  ),
+                ),
+                if (isSelected)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 4),
+                 
+                  )
+              ],
+            ),
+          ],
+        ),
       ),
-      subtitle: Text('Đón trong ${vehicle['time']}'),
-      trailing: Text(
-        '${vehicle['price']}đ',
-        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-      ),
+    );
+  }
+  // Hàm format tiền: 37089 -> 37.000
+  String formatMoney(dynamic amount) {
+    if (amount == null) return '0';
+    int price = amount.toInt();
+    
+    // 1. Làm tròn đến hàng nghìn (37089 -> 37000)
+    price = (price / 1000).round() * 1000;
+
+    // 2. Thêm dấu chấm phân cách hàng nghìn
+    // (Dùng RegExp đơn giản đỡ phải cài thư viện intl)
+    return price.toString().replaceAllMapped(
+        RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), 
+        (Match m) => '${m[1]}.'
     );
   }
 

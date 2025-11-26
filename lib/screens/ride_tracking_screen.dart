@@ -16,12 +16,12 @@ class RideTrackingScreen extends StatefulWidget {
 
 class _RideTrackingScreenState extends State<RideTrackingScreen> {
   final RideService _rideService = RideService();
-  
+
   Timer? _timer;
   String _currentStatus = "accepted"; // Trạng thái mặc định
   String _statusText = "Tài xế đang đến...";
   bool _isDisposed = false; // Cờ để tránh lỗi khi thoát màn hình
-
+  bool _isCancelling = false;
   @override
   void initState() {
     super.initState();
@@ -41,6 +41,110 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
     _timer = Timer.periodic(const Duration(seconds: 3), (timer) async {
       await _checkRideStatus();
     });
+  }
+
+  void _showCancelConfirmation() {
+    TextEditingController reasonController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Xác nhận hủy"),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text("Bạn có chắc muốn hủy chuyến đi này không?"),
+            const SizedBox(height: 10),
+            TextField(
+              controller: reasonController,
+              decoration: const InputDecoration(
+                hintText: "Nhập lý do (tùy chọn)",
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text("Không", style: TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(ctx); // Đóng dialog trước
+              // Gọi hàm xử lý hủy
+              _handleCancelRide(
+                reasonController.text.isEmpty
+                    ? "Khách hàng đổi ý"
+                    : reasonController.text,
+              );
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text(
+              "Hủy chuyến",
+              style: TextStyle(color: Colors.white),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 👇 2. Hàm gọi Service
+  Future<void> _handleCancelRide(String reason) async {
+    setState(() {
+      _isCancelling = true; // Bật loading
+    });
+
+    // Gọi Service
+    final success = await _rideService.cancelRide(widget.rideId, reason);
+
+    if (_isDisposed) return;
+
+    setState(() {
+      _isCancelling = false; // Tắt loading
+    });
+
+    if (success) {
+      // Dừng timer polling
+      _timer?.cancel();
+
+      // Cập nhật UI ngay lập tức
+      setState(() {
+        _currentStatus = 'cancelled';
+        _updateStatusText();
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Đã hủy chuyến thành công!")),
+      );
+
+      // Tùy chọn: Quay về màn hình chính sau 1s
+     Future.delayed(const Duration(milliseconds: 500), () {
+       if (mounted) {
+         // pop() nghĩa là đóng màn hình hiện tại, nó sẽ lộ ra màn hình cũ bên dưới
+         Navigator.of(context).pop(); 
+       }
+    });
+    } else {
+  _timer?.cancel(); // Dừng polling ngay lập tức
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Lỗi: Không tìm thấy chuyến xe (hoặc đã hoàn thành). Đang thoát..."),
+          backgroundColor: Colors.red,
+          duration: Duration(seconds: 2),
+        ),
+      );
+
+      // Đợi 2 giây rồi đá về trang chủ
+      Future.delayed(const Duration(seconds: 2), () {
+        if (!_isDisposed) {
+           Navigator.of(context).popUntil((route) => route.isFirst);
+        }
+      });
+    }
+    
   }
 
   Future<void> _checkRideStatus() async {
@@ -111,10 +215,12 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
           TextButton(
             onPressed: () {
               Navigator.pop(ctx); // Đóng dialog
-              Navigator.of(context).popUntil((route) => route.isFirst); // Về trang chủ
+              Navigator.of(
+                context,
+              ).popUntil((route) => route.isFirst); // Về trang chủ
             },
             child: const Text("Đóng", style: TextStyle(fontSize: 16)),
-          )
+          ),
         ],
       ),
     );
@@ -132,7 +238,8 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
         title: const Text("Theo dõi chuyến đi"),
         backgroundColor: AppTheme.primaryGreen,
         foregroundColor: Colors.white,
-        automaticallyImplyLeading: false, // Ẩn nút back để không thoát lung tung
+        automaticallyImplyLeading:
+            false, // Ẩn nút back để không thoát lung tung
       ),
       body: Stack(
         children: [
@@ -145,7 +252,10 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
                 children: [
                   Icon(Icons.map_outlined, size: 80, color: Colors.black12),
                   SizedBox(height: 10),
-                  Text("Bản đồ realtime đang cập nhật...", style: TextStyle(color: Colors.grey)),
+                  Text(
+                    "Bản đồ realtime đang cập nhật...",
+                    style: TextStyle(color: Colors.grey),
+                  ),
                 ],
               ),
             ),
@@ -161,7 +271,13 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
               decoration: const BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-                boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 20, offset: Offset(0, -5))],
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black12,
+                    blurRadius: 20,
+                    offset: Offset(0, -5),
+                  ),
+                ],
               ),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -193,16 +309,32 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
                       CircleAvatar(
                         radius: 30,
                         backgroundColor: Colors.grey[200],
-                        child: const Icon(Icons.person, size: 35, color: Colors.grey),
+                        child: const Icon(
+                          Icons.person,
+                          size: 35,
+                          color: Colors.grey,
+                        ),
                       ),
                       const SizedBox(width: 16),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(driverName, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                            Text(
+                              driverName,
+                              style: const TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
                             const SizedBox(height: 4),
-                            Text("$vehicle • $plate", style: const TextStyle(fontSize: 16, color: Colors.grey)),
+                            Text(
+                              "$vehicle • $plate",
+                              style: const TextStyle(
+                                fontSize: 16,
+                                color: Colors.grey,
+                              ),
+                            ),
                           ],
                         ),
                       ),
@@ -215,20 +347,31 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
                       ),
                     ],
                   ),
-                  
+
                   const SizedBox(height: 20),
                   const Divider(),
-                  
+
                   // Nút Huỷ (Chỉ hiện khi chưa hoàn thành)
-                  if (_currentStatus != 'completed' && _currentStatus != 'in_progress')
+                  if (_currentStatus != 'completed' &&
+                      _currentStatus !=
+                          'cancelled' && // Thêm check này để ẩn nút nếu đã hủy rồi
+                      _currentStatus !=
+                          'in_progress') // Thường thì đang đi không cho hủy, tùy mày
                     Center(
-                      child: TextButton.icon(
-                        onPressed: () {
-                          // Gọi API Cancel ở đây
-                        },
-                        icon: const Icon(Icons.cancel, color: Colors.red),
-                        label: const Text("Huỷ chuyến đi", style: TextStyle(color: Colors.red)),
-                      ),
+                      child: _isCancelling
+                          ? const CircularProgressIndicator() // Hiện loading nếu đang gọi API
+                          : TextButton.icon(
+                              onPressed:
+                                  _showCancelConfirmation, // 👈 Gắn hàm vào đây
+                              icon: const Icon(Icons.cancel, color: Colors.red),
+                              label: const Text(
+                                "Huỷ chuyến đi",
+                                style: TextStyle(
+                                  color: Colors.red,
+                                  fontSize: 16,
+                                ),
+                              ),
+                            ),
                     ),
                 ],
               ),
@@ -241,12 +384,18 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
 
   Color _getStatusColor(String status) {
     switch (status) {
-      case 'accepted': return Colors.orange;
-      case 'arrived': return Colors.blue;
-      case 'in_progress': return AppTheme.primaryGreen; // Màu xanh lá
-      case 'completed': return Colors.green[800]!;
-      case 'cancelled': return Colors.red;
-      default: return Colors.black;
+      case 'accepted':
+        return Colors.orange;
+      case 'arrived':
+        return Colors.blue;
+      case 'in_progress':
+        return AppTheme.primaryGreen; // Màu xanh lá
+      case 'completed':
+        return Colors.green[800]!;
+      case 'cancelled':
+        return Colors.red;
+      default:
+        return Colors.black;
     }
   }
 }

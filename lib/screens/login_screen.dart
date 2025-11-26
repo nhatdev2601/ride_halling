@@ -15,8 +15,10 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen>
     with TickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
-  final _emailController = TextEditingController();
-  final _passwordController = TextEditingController();
+  // final _emailController = TextEditingController();
+  // final _passwordController = TextEditingController();
+  final _emailController = TextEditingController(text: "thao@gmail.com");
+  final _passwordController = TextEditingController(text: "123456");
   final AuthService _authService = AuthService(); // ✅ Thêm AuthService
 
   bool _obscurePassword = true;
@@ -264,7 +266,7 @@ class _LoginScreenState extends State<LoginScreen>
                               controller: _emailController,
                               keyboardType: TextInputType.emailAddress,
                               decoration: InputDecoration(
-                                labelText: 'Email',    
+                                labelText: 'Email',
                                 prefixIcon: const Icon(
                                   Icons.email_outlined,
                                   color: AppTheme.primaryGreen,
@@ -306,7 +308,7 @@ class _LoginScreenState extends State<LoginScreen>
                               controller: _passwordController,
                               obscureText: _obscurePassword,
                               decoration: InputDecoration(
-                                labelText: 'Mật khẩu',   
+                                labelText: 'Mật khẩu',
                                 prefixIcon: const Icon(
                                   Icons.lock_outline,
                                   color: AppTheme.primaryGreen,

@@ -130,20 +130,26 @@ class RideService {
   }
 
   // ❌ Hủy chuyến xe
-  Future<bool> cancelRide(String rideId, String reason) async {
+ Future<bool> cancelRide(String rideId, String reason) async {
     try {
       final token = await _authService.getAccessToken();
-
+print('🔻 ĐANG GỌI API CANCEL CHO ID: $rideId'); 
+      print('URL: $baseUrl/$rideId/cancel');
+      // Gọi đúng endpoint /cancel mà controller định nghĩa
       final response = await http
-          .put(
-            Uri.parse('$baseUrl/$rideId/status'),
+          .post(
+            Uri.parse('$baseUrl/$rideId/cancel'),
             headers: {
               'Content-Type': 'application/json',
               'Authorization': 'Bearer $token',
             },
-            body: jsonEncode({'status': 'cancelled', 'reason': reason}),
+            // Body chỉ cần gửi reason, backend tự lo status
+            body: jsonEncode({'reason': reason}),
           )
-          .timeout(const Duration(seconds: 5));
+          .timeout(const Duration(seconds: 10));
+
+      print('Cancel Status: ${response.statusCode}');
+      print('Cancel Body: ${response.body}');
 
       return response.statusCode == 200;
     } catch (e) {

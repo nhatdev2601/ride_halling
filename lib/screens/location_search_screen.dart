@@ -9,7 +9,7 @@ import 'pickup_confirmation_screen.dart';
 
 class LocationSearchScreen extends StatefulWidget {
   final String? initialDestination; // ✅ Thêm tham số nhận điểm đến ban đầu
-
+  
   const LocationSearchScreen({super.key, this.initialDestination});
 
   @override
@@ -57,6 +57,7 @@ class _LocationSearchScreenState extends State<LocationSearchScreen> {
     
     if (widget.initialDestination != null) {
       _destinationController.text = widget.initialDestination!;
+    
     }
     
     _getCurrentLocation();
@@ -66,6 +67,16 @@ class _LocationSearchScreenState extends State<LocationSearchScreen> {
       _searchFocusNode.unfocus();
       _destinationFocusNode.unfocus();
     });
+    _searchFocusNode.addListener(() {
+    if (!_searchFocusNode.hasFocus) {
+      // Nếu ô trống trơn thì điền lại chữ mặc định
+      if (_searchController.text.trim().isEmpty) {
+        setState(() {
+          _searchController.text = DEFAULT_PICKUP_TEXT;
+        });
+      }
+    }
+  });
   }
 
   void _showError(String message) {
@@ -419,15 +430,34 @@ class _LocationSearchScreenState extends State<LocationSearchScreen> {
                       Expanded(
                         child: TextField(
                           controller: _searchController,
-                          focusNode: _searchFocusNode,
-                          enableInteractiveSelection: false,
-                          decoration: const InputDecoration(
-                            hintText: 'Vị trí hiện tại',
-                            border: InputBorder.none,
-                            hintStyle: TextStyle(color: Colors.grey, fontSize: 14),
-                          ),
-                          style: const TextStyle(fontSize: 14),
-                          onChanged: (value) => _onSearchChanged(value, true), // ✅ isPickup = true
+  focusNode: _searchFocusNode,
+  enableInteractiveSelection: true, // Bật cái này lên để copy paste được (nếu cần)
+  decoration: InputDecoration(
+    hintText: 'Nhập điểm đón', // Đổi hint text cho hợp lý khi xóa trắng
+    border: InputBorder.none,
+    hintStyle: const TextStyle(color: Colors.grey, fontSize: 14),
+    // Thêm nút 'X' để xóa nhanh nếu lỡ nhập sai
+    suffixIcon: _searchController.text.isNotEmpty && _searchController.text != DEFAULT_PICKUP_TEXT
+        ? IconButton(
+            icon: const Icon(Icons.clear, size: 16, color: Colors.grey),
+            onPressed: () {
+              _searchController.clear();
+              _onSearchChanged('', true); // Reset list gợi ý
+            },
+          )
+        : null,
+  ),
+  style: const TextStyle(fontSize: 14),
+  
+  // 👇 QUAN TRỌNG: Xử lý khi bấm vào
+  onTap: () {
+    if (_searchController.text == DEFAULT_PICKUP_TEXT) {
+      _searchController.clear(); // Xóa sạch chữ "Vị trí hiện tại"
+      _onSearchChanged('', true); // Load lại trạng thái (ví dụ hiện list recent)
+    }
+  },
+  
+  onChanged: (value) => _onSearchChanged(value, true),
                         ),
                       ),
                     ],
