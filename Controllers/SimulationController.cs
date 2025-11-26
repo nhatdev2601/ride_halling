@@ -1,95 +1,181 @@
-﻿using api_ride.Models.DTOs;
+﻿using api_ride.Models.DTOs; // Đảm bảo có model Location
 using api_ride.Repositories;
 using api_ride.Services;
 using Microsoft.AspNetCore.Mvc;
 using NGeoHash;
+using System;
+using System.Threading.Tasks;
+
 namespace api_ride.Controllers
 {
-        [ApiController]
-        [Route("api/simulation")]
-        public class SimulationController : ControllerBase
+    [ApiController]
+    [Route("api/simulation")]
+    public class SimulationController : ControllerBase
+    {
+        private readonly ICassandraService _cassandraService;
+        private readonly IFirebaseService _firebaseService;
+        private readonly IRideRepository _rideService; // 👇 Đã sửa tên biến cho khớp logic bên dưới
+
+        // Constructor: Inject các Service vào
+        public SimulationController(
+            ICassandraService cassandraService,
+            IRideRepository rideService,
+            IFirebaseService firebaseService)
         {
-            private readonly ICassandraService _cassandraService;
-       
-        private readonly IRideRepository _rideRepository;
-        public SimulationController(ICassandraService cassandraService, IRideRepository rideRepository)
-            {
-                _cassandraService = cassandraService;
-                 _rideRepository = rideRepository;
+            _cassandraService = cassandraService;
+            _firebaseService = firebaseService;
+            _rideService = rideService; // Gán vào biến _rideService
         }
 
-            // 👇 API NÀY ĐỂ FLUTTER GỌI LÚC MỞ MAP
-            [HttpPost("update-location-fake")]
-            public async Task<IActionResult> UpdateDriverLocationFake([FromBody] Location location)
+        // ==========================================
+        // 1. API CẬP NHẬT VỊ TRÍ GIẢ (Cho Flutter gọi lúc mở Map)
+        // ==========================================
+        [HttpPost("update-location-fake")]
+        public async Task<IActionResult> UpdateDriverLocationFake([FromBody] Location location)
+        {
+            try
             {
-                try
-                {
-                    // 1. ID cứng của thằng tài xế Khang (lấy từ script SQL tao đưa mày)
-                    // Mày check lại trong DB xem đúng ID này chưa nhé
-                    var driverId = Guid.Parse("99999999-9999-9999-9999-999999999999");
+                // 1. ID cứng của thằng tài xế Khang (lấy từ script SQL)
+                var driverId = Guid.Parse("99999999-9999-9999-9999-999999999999");
 
-                    // 2. Tính Geohash mới dựa trên toạ độ Flutter gửi lên (Precision 6)
-                    var newGeohash = GeoHash.Encode(location.Latitude, location.Longitude, 6);
+                // 2. Tính Geohash mới (Precision 6)
+                var newGeohash = GeoHash.Encode(location.Latitude, location.Longitude, 6);
 
-                    // 3. Cập nhật bảng tìm kiếm (drivers_by_location)
-                    // Logic Demo: Insert đè vào vị trí mới để tìm là thấy ngay.
-                    // (Vị trí cũ ở geohash cũ vẫn còn rác, nhưng kệ nó, demo cho nhanh)
-                    var querySearch = @"
+                // 3. Cập nhật bảng tìm kiếm (drivers_by_location)
+                var querySearch = @"
                     INSERT INTO drivers_by_location (geohash, driver_id, latitude, longitude, is_available, rating, updated_at)
                     VALUES (?, ?, ?, ?, true, 5.0, toTimestamp(now()))";
 
-                    // Lưu ý: Hàm ExecuteAsync của mày phải hỗ trợ truyền tham số dạng mảng object[]
-                    await _cassandraService.ExecuteAsync(querySearch, new object[] {
+                await _cassandraService.ExecuteAsync(querySearch, new object[] {
                     newGeohash, driverId, location.Latitude, location.Longitude
                 });
 
-                    // 4. Cập nhật bảng thông tin chính (drivers)
-                    // Để lúc click vào xem chi tiết thì thấy toạ độ mới
-                    var queryInfo = @"
+                // 4. Cập nhật bảng thông tin chính (drivers)
+                var queryInfo = @"
                     UPDATE drivers 
                     SET current_location_lat = ?, current_location_lng = ? 
                     WHERE driver_id = ?";
 
-                    await _cassandraService.ExecuteAsync(queryInfo, new object[] {
+                await _cassandraService.ExecuteAsync(queryInfo, new object[] {
                     location.Latitude, location.Longitude, driverId
                 });
 
-                    return Ok(new { message = "Đã dời tài xế Khang về vị trí của bạn!" });
-                }
-                catch (Exception ex)
-                {
-                    return BadRequest(new { error = ex.Message });
-                }
+                return Ok(new { message = "Đã dời tài xế Khang về vị trí của bạn!" });
             }
-        // ... (code cũ giữ nguyên)
+            catch (Exception ex)
+            {
+                return BadRequest(new { error = ex.Message });
+            }
+        }
 
-        // 1. Giả lập Tài xế đã đến điểm đón
+        // ==========================================
+        // 2. API TELEPORT (DỊCH CHUYỂN TỨC THỜI)
+        // ==========================================
+        [HttpPost("teleport-to-pickup/{rideId}")]
+        public async Task<IActionResult> TeleportDriverToPickup(string rideId)
+        {
+            try
+            {
+                Console.WriteLine($"👻 [Simulation] Bắt đầu teleport cho Ride: {rideId}");
+
+                // Parse String sang Guid
+                if (!Guid.TryParse(rideId, out Guid idGuid)) return BadRequest("ID không đúng định dạng Guid");
+
+                // Gọi Service lấy thông tin chuyến đi
+                var ride = await _rideService.GetRideByIdAsync(rideId);
+
+                if (ride == null)
+                {
+                    Console.WriteLine("❌ Không tìm thấy ride trong DB");
+                    return NotFound("Ride not found");
+                }
+
+                // Check tọa độ
+                Console.WriteLine($"📍 Pickup gốc: {ride.PickupLocationLat}, {ride.PickupLocationLng}");
+
+                if (ride.PickupLocationLat == 0 || ride.PickupLocationLng == 0)
+                {
+                    return BadRequest("Lỗi: Tọa độ trong DB bằng 0. Kiểm tra lại Model Ride.cs!");
+                }
+
+                // Tạo tọa độ Fake (Tài xế ở gần điểm đón 1 chút)
+                double fakeLat = ride.PickupLocationLat - 0.002;
+                double fakeLng = ride.PickupLocationLng - 0.002;
+
+                // Cấu trúc dữ liệu gửi lên Firebase (Key: lat, lng)
+                var updateData = new
+                {
+                    driver_location = new
+                    {
+                        lat = fakeLat,
+                        lng = fakeLng,
+                        bearing = 45 // Góc quay xe
+                    }
+                };
+
+                // Gửi lên Firebase (PATCH update)
+                await _firebaseService.UpdateToFirebaseAsync($"rides/{rideId}", updateData);
+
+                return Ok(new { message = "Xe đã xuất hiện!", location = updateData });
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("❌ Lỗi Simulation: " + ex.Message);
+                return BadRequest(ex.Message);
+            }
+        }
+
+        // ==========================================
+        // 3. CÁC API CẬP NHẬT TRẠNG THÁI (Arrived, Start, Complete)
+        // ==========================================
         [HttpPost("pickup/{rideId}")]
         public async Task<IActionResult> DriverArrived(string rideId)
         {
-            // Update status sang 'arrived'
-            await _rideRepository.UpdateRideStatusAsync(rideId, "arrived");
+            await _rideService.UpdateRideStatusAsync(rideId, "arrived"); // Sửa _rideRepository thành _rideService
             return Ok(new { message = "Tài xế đã đến nơi!" });
         }
 
-        // 2. Giả lập Tài xế bắt đầu chạy
         [HttpPost("start/{rideId}")]
         public async Task<IActionResult> StartTrip(string rideId)
         {
-            // Update status sang 'in_progress'
-            await _rideRepository.UpdateRideStatusAsync(rideId, "in_progress");
+            await _rideService.UpdateRideStatusAsync(rideId, "in_progress");
             return Ok(new { message = "Chuyến xe bắt đầu!" });
         }
 
-        // 3. Giả lập Hoàn thành chuyến xe
         [HttpPost("complete/{rideId}")]
         public async Task<IActionResult> CompleteTrip(string rideId)
         {
-            // Update status sang 'completed'
-            await _rideRepository.UpdateRideStatusAsync(rideId, "completed");
+            await _rideService.UpdateRideStatusAsync(rideId, "completed");
             return Ok(new { message = "Chuyến xe hoàn tất. Thu tiền!" });
         }
-        // ...
+
+        // ==========================================
+        // 4. API TEST KẾT NỐI FIREBASE
+        // ==========================================
+        [HttpGet("test-firebase-connection")]
+        public async Task<IActionResult> TestFirebaseConnection()
+        {
+            try
+            {
+                var testData = new
+                {
+                    message = "Kết nối thành công rồi tml ơi!",
+                    timestamp = DateTime.Now.ToString(),
+                    check_by = "Backend Developer"
+                };
+
+                Console.WriteLine("🚀 Đang thử kết nối Firebase...");
+                var success = await _firebaseService.TestConnectionAsync(testData);
+
+                if (success)
+                    return Ok(new { status = "Success", message = "Đã ghi xuống Firebase thành công!" });
+                else
+                    return BadRequest(new { status = "Failed", message = "Ghi thất bại" });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { status = "Failed", error = ex.Message });
+            }
+        }
     }
 }
-

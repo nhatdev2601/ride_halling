@@ -1,10 +1,14 @@
-﻿using Microsoft.AspNetCore.Authentication.JwtBearer;
+﻿using api_ride.Repositories;
+using api_ride.Services;
+using FirebaseAdmin;
+using Google.Apis.Auth.OAuth2;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using System.Text;
-using api_ride.Services;
-using api_ride.Repositories;
-
+using FireSharp.Config;
+using FireSharp.Interfaces;
+using FireSharp;
 var builder = WebApplication.CreateBuilder(args);
 
 
@@ -21,7 +25,7 @@ builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<FareCalculationService>();
 builder.Services.AddScoped<IDriverService, DriverService>();
 builder.Services.AddScoped<IRideRepository, RideRepository>();
-
+builder.Services.AddScoped<IFirebaseService, FirebaseService>();
 // 3. CẤU HÌNH JWT (BẮT BUỘC PHẢI CÓ NẾU DÙNG [AUTHORIZE])
 var secretKey = builder.Configuration["Jwt:Secret"] ?? "YourVerySecureJwtSecretKeyThatIsAtLeast32CharactersLong!";
 var keyBytes = Encoding.UTF8.GetBytes(secretKey);
@@ -85,7 +89,19 @@ builder.Services.AddCors(options =>
         policy.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod();
     });
 });
+IFirebaseConfig config = new FirebaseConfig
+{
+    // 👇 Dán cái link mày vừa copy ở Bước 2 vào đây
+    BasePath = "https://appride-f2bb5-default-rtdb.asia-southeast1.firebasedatabase.app",
 
+    // 👇 Vào Firebase Console -> Project Settings -> Service Accounts -> Database Secrets -> Copy mã bí mật dán vào đây
+    AuthSecret = "FYnQKi8Klx4Xcr7lKlg2cQVfPuv4c9pqtzZp3Hx4"
+};
+
+IFirebaseClient client = new FirebaseClient(config);
+
+// Đăng ký Dependency Injection để dùng được ở chỗ khác
+builder.Services.AddSingleton<IFirebaseClient>(client);
 var app = builder.Build();
 
 if (app.Environment.IsDevelopment())

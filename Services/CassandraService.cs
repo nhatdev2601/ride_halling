@@ -28,6 +28,7 @@ namespace api_ride.Services
         // Trong ICassandraService
         Task<bool> CancelRideAsync(Guid rideId, string reason);
         // Driver operations
+        Task<DriverInfo?> GetDriverInfoWithPhoneAsync(Guid rideId);
         Task<Driver?> GetDriverByIdAsync(Guid driverId);
         Task<Driver?> GetDriverByUserIdAsync(Guid userId);
         Task<List<DriverByLocation>> GetDriversByLocationAsync(string geohash);
@@ -786,6 +787,76 @@ namespace api_ride.Services
             {
                 _logger.LogError(ex, "Error canceling ride");
                 return false;
+            }
+        }
+        public async Task<DriverInfo?> GetDriverInfoWithPhoneAsync(Guid driverId)
+        {
+            try
+            {
+                // 1. Lấy thông tin Driver (để lấy user_id và vehicle_id)
+                var cqlDriver = "SELECT user_id, vehicle_id, rating, current_location_lat, current_location_lng FROM drivers WHERE driver_id = ?";
+                var psDriver = await _session.PrepareAsync(cqlDriver);
+                var driverRow = (await _session.ExecuteAsync(psDriver.Bind(driverId))).FirstOrDefault();
+
+                if (driverRow == null) return null;
+
+                var userId = driverRow.GetValue<Guid>("user_id");
+                var vehicleId = driverRow.GetValue<Guid>("vehicle_id");
+
+                // Lưu ý: Cassandra lưu decimal, code mày dùng double -> phải ép kiểu
+                var rating = (double)driverRow.GetValue<decimal>("rating");
+                var lat = driverRow.GetValue<double>("current_location_lat");
+                var lng = driverRow.GetValue<double>("current_location_lng");
+
+                // 2. Lấy User (ĐỂ LẤY SỐ ĐIỆN THOẠI & TÊN)
+                var cqlUser = "SELECT full_name, phone_number FROM users WHERE user_id = ?";
+                var psUser = await _session.PrepareAsync(cqlUser);
+                var userRow = (await _session.ExecuteAsync(psUser.Bind(userId))).FirstOrDefault();
+
+                string phone = userRow?.GetValue<string>("phone_number") ?? "";
+                string name = userRow?.GetValue<string>("full_name") ?? "Tài xế";
+
+                // 3. Lấy Xe (Nếu cần hiển thị tên xe, biển số)
+                VehicleInfo? vehicleInfo = null;
+                if (vehicleId != Guid.Empty)
+                {
+                    var cqlVehicle = "SELECT vehicle_type, brand, model, color, license_plate FROM vehicles WHERE vehicle_id = ?";
+                    var psVehicle = await _session.PrepareAsync(cqlVehicle);
+                    var vRow = (await _session.ExecuteAsync(psVehicle.Bind(vehicleId))).FirstOrDefault();
+
+                    if (vRow != null)
+                    {
+                        vehicleInfo = new VehicleInfo
+                        {
+                            VehicleType = vRow.GetValue<string>("vehicle_type"),
+                            Brand = vRow.GetValue<string>("brand"),
+                            Model = vRow.GetValue<string>("model"),
+                            Color = vRow.GetValue<string>("color"),
+                            LicensePlate = vRow.GetValue<string>("license_plate")
+                        };
+                    }
+                }
+
+                // 4. Đổ dữ liệu vào Model DriverInfo của mày
+                return new DriverInfo
+                {
+                    DriverId = driverId.ToString(), // Model mày để string nên phải .ToString()
+                    FullName = name,
+                    PhoneNumber = phone, // 👈 SỐ ĐIỆN THOẠI ĐÃ LẤY ĐƯỢC
+                    Rating = rating,
+                    Vehicle = vehicleInfo,
+                    CurrentLocation = new Location
+                    {
+                        Latitude = lat,
+                        Longitude = lng
+                    },
+                    EstimatedArrival = 5 // Fake tạm hoặc tính toán nếu cần
+                };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Lỗi lấy thông tin tài xế kèm SĐT");
+                return null;
             }
         }
         private RideHistoryDto MapRowToRideHistory(Row row)

@@ -16,16 +16,20 @@ namespace api_ride.Controllers
         private readonly IRideRepository _rideRepository;
         private readonly IDriverService _driverService;
         private readonly ILogger<RidesController> _logger;
+        private readonly ICassandraService _cassandraService;
 
         public RidesController(
             FareCalculationService fareService,
             IRideRepository rideRepository,
             IDriverService driverService,
-            ILogger<RidesController> logger)
+            ILogger<RidesController> logger,
+            ICassandraService cassandraService)
         {
             _fareService = fareService;
             _rideRepository = rideRepository;
             _driverService = driverService;
+            _cassandraService = cassandraService;
+
             _logger = logger;
         }
 
@@ -173,12 +177,7 @@ namespace api_ride.Controllers
 
                 if (Guid.TryParse(userId, out var userGuid))
                 {
-                    // Lưu ý: Hàm Repository của mày nếu nhận string thì để nguyên, 
-                    // nếu nhận Guid thì truyền userGuid vào.
-                    // Dựa theo lỗi của mày thì Repo đang nhận string nhưng bên trong nó parse guid.
-                    // Hãy check kỹ lại hàm GetRidesByPassengerAsync bên RideRepository xem nó nhận string hay Guid.
-
-                    // Cách an toàn nhất:
+                    
                     var rides = await _rideRepository.GetRidesByPassengerAsync(userId);
                     return Ok(rides);
                 }
@@ -190,6 +189,51 @@ namespace api_ride.Controllers
             {
                 _logger.LogError(ex, "Error getting user rides");
                 return StatusCode(500, new { error = "Internal server error" });
+            }
+        }
+        [HttpGet("{id}/details")]
+        public async Task<IActionResult> GetRideDetailsWithPhone(Guid id)
+        {
+            try
+            {
+                // 1. Lấy thông tin chuyến đi
+                var ride = await _cassandraService.GetRideByIdAsync(id);
+                if (ride == null) return NotFound(new { message = "Không tìm thấy chuyến xe" });
+
+                DriverInfo? driverInfo = null;
+
+                // 2. Nếu có tài xế -> Gọi hàm lấy SĐT mày vừa viết
+                if (ride.DriverId != null)
+                {
+                    driverInfo = await _cassandraService.GetDriverInfoWithPhoneAsync(ride.DriverId.Value);
+                }
+
+                // 3. Trả về cục JSON trực tiếp (Khỏi cần class DTO nào hết)
+                // Tao map đúng key 'snake_case' để Flutter đỡ phải sửa
+                return Ok(new
+                {
+                    ride_id = ride.RideId,
+                    status = ride.Status,
+                    total_fare = ride.TotalFare,
+
+                    // Location cho Map
+                    pickup_location_lat = ride.PickupLocationLat,
+                    pickup_location_lng = ride.PickupLocationLng,
+                    pickup_address = ride.PickupAddress,
+
+                    dropoff_location_lat = ride.DropoffLocationLat,
+                    dropoff_location_lng = ride.DropoffLocationLng,
+                    dropoff_address = ride.DropoffAddress,
+
+                    vehicle_type = ride.VehicleType,
+
+                    // Thông tin tài xế (Đã có SĐT bên trong)
+                    driver_info = driverInfo
+                });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { error = ex.Message });
             }
         }
 
