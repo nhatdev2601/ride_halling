@@ -9,8 +9,15 @@ import 'pickup_confirmation_screen.dart';
 
 class LocationSearchScreen extends StatefulWidget {
   final String? initialDestination; // ✅ Thêm tham số nhận điểm đến ban đầu
-  
-  const LocationSearchScreen({super.key, this.initialDestination});
+  final String? initialPickup; // ✅ Thêm tham số nhận điểm đón ban đầu
+  final bool isEditingPickup; // ✅ Cho biết đang chỉnh sửa điểm đón
+
+  const LocationSearchScreen({
+    super.key,
+    this.initialDestination,
+    this.initialPickup,
+    this.isEditingPickup = false,
+  });
 
   @override
   State<LocationSearchScreen> createState() => _LocationSearchScreenState();
@@ -19,7 +26,8 @@ class LocationSearchScreen extends StatefulWidget {
 class _LocationSearchScreenState extends State<LocationSearchScreen> {
   final TextEditingController _searchController = TextEditingController();
   final TextEditingController _destinationController = TextEditingController();
-  final FocusNode _searchFocusNode = FocusNode(); // ✅ Thêm FocusNode cho điểm đi
+  final FocusNode _searchFocusNode =
+      FocusNode(); // ✅ Thêm FocusNode cho điểm đi
   final FocusNode _destinationFocusNode = FocusNode();
   List<Map<String, dynamic>> _suggestions = [];
   Timer? _debounce;
@@ -29,18 +37,21 @@ class _LocationSearchScreenState extends State<LocationSearchScreen> {
 
   LatLng? _currentPosition;
 
-  static const String GOONG_API_KEY = 'pvIfGgG2YHiLHSQgg3WRGo4NVK0RDabyqH9k1HQQ';
+  static const String GOONG_API_KEY =
+      'pvIfGgG2YHiLHSQgg3WRGo4NVK0RDabyqH9k1HQQ';
   static const String DEFAULT_PICKUP_TEXT = 'Vị trí hiện tại';
 
   final List<Map<String, String>> _recentLocations = [
     {
       'name': 'Bến Xe Miền Tây',
-      'address': '395 Đường Kinh Dương Vương, Phường An Lạc, Quận Bình Tân, Thành phố Hồ Chí Minh',
+      'address':
+          '395 Đường Kinh Dương Vương, Phường An Lạc, Quận Bình Tân, Thành phố Hồ Chí Minh',
       'distance': '1,2 km',
     },
     {
       'name': 'Cổng 1 - Bến Xe Miền Tây',
-      'address': '395 Đường Kinh Dương Vương, Phường An Lạc, Quận Bình Tân, Thành phố Hồ Chí Minh',
+      'address':
+          '395 Đường Kinh Dương Vương, Phường An Lạc, Quận Bình Tân, Thành phố Hồ Chí Minh',
       'distance': '1,3 km',
     },
     {
@@ -53,30 +64,46 @@ class _LocationSearchScreenState extends State<LocationSearchScreen> {
   @override
   void initState() {
     super.initState();
-    _searchController.text = DEFAULT_PICKUP_TEXT;
-    
+
+    // ✅ Xử lý initialPickup
+    if (widget.initialPickup != null) {
+      _searchController.text = widget.initialPickup!;
+    } else {
+      _searchController.text = DEFAULT_PICKUP_TEXT;
+    }
+
     if (widget.initialDestination != null) {
       _destinationController.text = widget.initialDestination!;
-    
     }
-    
+
     _getCurrentLocation();
 
+    // ✅ Focus vào ô điểm đón nếu đang edit
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      FocusScope.of(context).unfocus();
-      _searchFocusNode.unfocus();
-      _destinationFocusNode.unfocus();
+      if (widget.isEditingPickup) {
+        _searchFocusNode.requestFocus();
+        _isSearchingPickup = true;
+        // Select all text để dễ chỉnh sửa
+        _searchController.selection = TextSelection(
+          baseOffset: 0,
+          extentOffset: _searchController.text.length,
+        );
+      } else {
+        FocusScope.of(context).unfocus();
+        _searchFocusNode.unfocus();
+        _destinationFocusNode.unfocus();
+      }
     });
     _searchFocusNode.addListener(() {
-    if (!_searchFocusNode.hasFocus) {
-      // Nếu ô trống trơn thì điền lại chữ mặc định
-      if (_searchController.text.trim().isEmpty) {
-        setState(() {
-          _searchController.text = DEFAULT_PICKUP_TEXT;
-        });
+      if (!_searchFocusNode.hasFocus) {
+        // Nếu ô trống trơn thì điền lại chữ mặc định
+        if (_searchController.text.trim().isEmpty) {
+          setState(() {
+            _searchController.text = DEFAULT_PICKUP_TEXT;
+          });
+        }
       }
-    }
-  });
+    });
   }
 
   void _showError(String message) {
@@ -266,9 +293,28 @@ class _LocationSearchScreenState extends State<LocationSearchScreen> {
       if (mounted) Navigator.pop(context);
 
       if (pickupLatLng != null) {
+        // ✅ Nếu đang edit điểm đón từ màn hình xác nhận
+        if (widget.isEditingPickup && widget.initialDestination != null) {
+          // Lấy lại destinationLatLng
+          final destLatLng = await _geocodeAddress(widget.initialDestination!);
+
+          if (destLatLng != null) {
+            Navigator.pop(context, {
+              'pickupAddress': address,
+              'pickupLatLng': pickupLatLng,
+              'destinationAddress': widget.initialDestination,
+              'destinationLatLng': destLatLng,
+            });
+          } else {
+            _showError('Không thể xác định vị trí điểm đến');
+          }
+          return;
+        }
+
+        // Logic cũ - chỉ cập nhật local state
         setState(() {
           _currentPosition = pickupLatLng;
-          _searchController.text = name; // ✅ Cập nhật TextField và AppBar
+          _searchController.text = name;
           _suggestions.clear();
           _showRecent = true;
         });
@@ -279,7 +325,8 @@ class _LocationSearchScreenState extends State<LocationSearchScreen> {
     }
 
     // ✅ Xử lý khi chọn điểm đến (giữ nguyên logic cũ)
-    bool isUsingCurrentLocation = (_searchController.text == DEFAULT_PICKUP_TEXT);
+    bool isUsingCurrentLocation =
+        (_searchController.text == DEFAULT_PICKUP_TEXT);
 
     LatLng? pickupLatLng;
     String pickupAddress;
@@ -288,7 +335,7 @@ class _LocationSearchScreenState extends State<LocationSearchScreen> {
       if (_currentPosition == null) {
         _showError('Đang lấy vị trí hiện tại, vui lòng đợi...');
         await _getCurrentLocation();
-        
+
         if (_currentPosition == null) {
           _showError('Không thể xác định vị trí hiện tại');
           return;
@@ -377,6 +424,7 @@ class _LocationSearchScreenState extends State<LocationSearchScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
+      resizeToAvoidBottomInset: true,
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
@@ -389,7 +437,11 @@ class _LocationSearchScreenState extends State<LocationSearchScreen> {
             CircleAvatar(
               radius: 16,
               backgroundColor: Colors.black,
-              child: const Icon(Icons.location_on, color: Colors.white, size: 18),
+              child: const Icon(
+                Icons.location_on,
+                color: Colors.white,
+                size: 18,
+              ),
             ),
             const SizedBox(width: 8),
             Expanded(
@@ -412,142 +464,199 @@ class _LocationSearchScreenState extends State<LocationSearchScreen> {
         onTap: () {
           FocusScope.of(context).unfocus();
         },
-        child: Column(
-          children: [
-            Container(
-              margin: const EdgeInsets.all(16),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              decoration: BoxDecoration(
-                color: Colors.grey[100],
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Column(
-                children: [
-                  Row(
+        child: SingleChildScrollView(
+          child: SizedBox(
+            height:
+                MediaQuery.of(context).size.height -
+                MediaQuery.of(context).padding.top -
+                kToolbarHeight,
+            child: Column(
+              children: [
+                Container(
+                  margin: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[100],
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Column(
                     children: [
-                      const Icon(Icons.my_location, color: Colors.orange, size: 20),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: TextField(
-                          controller: _searchController,
-  focusNode: _searchFocusNode,
-  enableInteractiveSelection: true, // Bật cái này lên để copy paste được (nếu cần)
-  decoration: InputDecoration(
-    hintText: 'Nhập điểm đón', // Đổi hint text cho hợp lý khi xóa trắng
-    border: InputBorder.none,
-    hintStyle: const TextStyle(color: Colors.grey, fontSize: 14),
-    // Thêm nút 'X' để xóa nhanh nếu lỡ nhập sai
-    suffixIcon: _searchController.text.isNotEmpty && _searchController.text != DEFAULT_PICKUP_TEXT
-        ? IconButton(
-            icon: const Icon(Icons.clear, size: 16, color: Colors.grey),
-            onPressed: () {
-              _searchController.clear();
-              _onSearchChanged('', true); // Reset list gợi ý
-            },
-          )
-        : null,
-  ),
-  style: const TextStyle(fontSize: 14),
-  
-  // 👇 QUAN TRỌNG: Xử lý khi bấm vào
-  onTap: () {
-    if (_searchController.text == DEFAULT_PICKUP_TEXT) {
-      _searchController.clear(); // Xóa sạch chữ "Vị trí hiện tại"
-      _onSearchChanged('', true); // Load lại trạng thái (ví dụ hiện list recent)
-    }
-  },
-  
-  onChanged: (value) => _onSearchChanged(value, true),
-                        ),
+                      Row(
+                        children: [
+                          const Icon(
+                            Icons.my_location,
+                            color: Colors.orange,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: TextField(
+                              controller: _searchController,
+                              focusNode: _searchFocusNode,
+                              enableInteractiveSelection: true,
+                              decoration: InputDecoration(
+                                hintText:
+                                    'Nhập điểm đón', // Đổi hint text cho hợp lý khi xóa trắng
+                                border: InputBorder.none,
+                                hintStyle: const TextStyle(
+                                  color: Colors.grey,
+                                  fontSize: 14,
+                                ),
+                                // Thêm nút 'X' để xóa nhanh nếu lỡ nhập sai
+                                suffixIcon:
+                                    _searchController.text.isNotEmpty &&
+                                        _searchController.text !=
+                                            DEFAULT_PICKUP_TEXT
+                                    ? IconButton(
+                                        icon: const Icon(
+                                          Icons.clear,
+                                          size: 16,
+                                          color: Colors.grey,
+                                        ),
+                                        onPressed: () {
+                                          _searchController.clear();
+                                          _onSearchChanged(
+                                            '',
+                                            true,
+                                          ); // Reset list gợi ý
+                                        },
+                                      )
+                                    : null,
+                              ),
+                              style: const TextStyle(fontSize: 14),
+
+                              // 👇 QUAN TRỌNG: Xử lý khi bấm vào
+                              onTap: () {
+                                if (_searchController.text ==
+                                    DEFAULT_PICKUP_TEXT) {
+                                  _searchController
+                                      .clear(); // Xóa sạch chữ "Vị trí hiện tại"
+                                  _onSearchChanged(
+                                    '',
+                                    true,
+                                  ); // Load lại trạng thái (ví dụ hiện list recent)
+                                }
+                              },
+
+                              onChanged: (value) =>
+                                  _onSearchChanged(value, true),
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      const Divider(height: 1),
+
+                      Row(
+                        children: [
+                          const Icon(
+                            Icons.location_on,
+                            color: Colors.orange,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: TextField(
+                              controller: _destinationController,
+                              focusNode: _destinationFocusNode,
+                              enableInteractiveSelection: false,
+                              decoration: const InputDecoration(
+                                hintText: 'Tới điểm?',
+                                border: InputBorder.none,
+                                hintStyle: TextStyle(
+                                  color: Colors.grey,
+                                  fontSize: 14,
+                                ),
+                              ),
+                              style: const TextStyle(fontSize: 14),
+                              onChanged: (value) => _onSearchChanged(
+                                value,
+                                false,
+                              ), // ✅ isPickup = false
+                            ),
+                          ),
+                          if (_isLoading)
+                            const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: AppTheme.primaryGreen,
+                              ),
+                            )
+                          else
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: Colors.cyan[400],
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: const Icon(
+                                Icons.add,
+                                color: Colors.white,
+                                size: 16,
+                              ),
+                            ),
+                        ],
                       ),
                     ],
                   ),
-                  
-                  const Divider(height: 1),
-
-                  Row(
-                    children: [
-                      const Icon(Icons.location_on, color: Colors.orange, size: 20),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: TextField(
-                          controller: _destinationController,
-                          focusNode: _destinationFocusNode,
-                          enableInteractiveSelection: false,
-                          decoration: const InputDecoration(
-                            hintText: 'Tới điểm?',
-                            border: InputBorder.none,
-                            hintStyle: TextStyle(color: Colors.grey, fontSize: 14),
-                          ),
-                          style: const TextStyle(fontSize: 14),
-                          onChanged: (value) => _onSearchChanged(value, false), // ✅ isPickup = false
-                        ),
-                      ),
-                      if (_isLoading)
-                        const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: AppTheme.primaryGreen,
-                          ),
-                        )
-                      else
-                        Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: Colors.cyan[400],
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: const Icon(Icons.add, color: Colors.white, size: 16),
-                        ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Row(
-                children: [
-                  _buildTab('Đề xuất', _showRecent),
-                  const SizedBox(width: 12),
-                  _buildTab('Đã lưu', !_showRecent),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 16),
-
-            Expanded(
-              child: _showRecent ? _buildRecentList() : _buildSuggestionsList(),
-            ),
-
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
-                    blurRadius: 10,
-                    offset: const Offset(0, -2),
-                  ),
-                ],
-              ),
-              child: InkWell(
-                onTap: () {},
-                child: Row(
-                  children: const [
-                    Icon(Icons.map_outlined, color: Colors.grey),
-                    SizedBox(width: 8),
-                    Text('Chọn từ bản đồ', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
-                  ],
                 ),
-              ),
+
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Row(
+                    children: [
+                      _buildTab('Đề xuất', _showRecent),
+                      const SizedBox(width: 12),
+                      _buildTab('Đã lưu', !_showRecent),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 16),
+
+                Expanded(
+                  child: _showRecent
+                      ? _buildRecentList()
+                      : _buildSuggestionsList(),
+                ),
+
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.05),
+                        blurRadius: 10,
+                        offset: const Offset(0, -2),
+                      ),
+                    ],
+                  ),
+                  child: InkWell(
+                    onTap: () {},
+                    child: Row(
+                      children: const [
+                        Icon(Icons.map_outlined, color: Colors.grey),
+                        SizedBox(width: 8),
+                        Text(
+                          'Chọn từ bản đồ',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -560,19 +669,37 @@ class _LocationSearchScreenState extends State<LocationSearchScreen> {
         color: isActive ? Colors.black : Colors.grey[200],
         borderRadius: BorderRadius.circular(20),
       ),
-      child: Text(label, style: TextStyle(color: isActive ? Colors.white : Colors.black, fontWeight: FontWeight.w600)),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: isActive ? Colors.white : Colors.black,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
     );
   }
 
   Widget _buildRecentList() {
     return Column(
       children: [
-        ..._recentLocations.map((location) => _buildLocationItem(location['name']!, location['address']!, location['distance']!)),
+        ..._recentLocations.map(
+          (location) => _buildLocationItem(
+            location['name']!,
+            location['address']!,
+            location['distance']!,
+          ),
+        ),
         const Divider(height: 32),
         ListTile(
           leading: const Icon(Icons.map_outlined, color: Colors.grey),
-          title: const Text('Không có địa điểm bạn cần?', style: TextStyle(fontWeight: FontWeight.w600)),
-          subtitle: const Text('Hãy tạo địa điểm mới. Cùng xây dựng bản đồ hoàn hảo cho mọi chuyến đi!', style: TextStyle(fontSize: 12, color: Colors.grey)),
+          title: const Text(
+            'Không có địa điểm bạn cần?',
+            style: TextStyle(fontWeight: FontWeight.w600),
+          ),
+          subtitle: const Text(
+            'Hãy tạo địa điểm mới. Cùng xây dựng bản đồ hoàn hảo cho mọi chuyến đi!',
+            style: TextStyle(fontSize: 12, color: Colors.grey),
+          ),
           trailing: const Icon(Icons.arrow_forward_ios, size: 16),
           onTap: () {},
         ),
@@ -582,7 +709,12 @@ class _LocationSearchScreenState extends State<LocationSearchScreen> {
 
   Widget _buildSuggestionsList() {
     if (_suggestions.isEmpty && !_isLoading) {
-      return const Center(child: Text('Không tìm thấy kết quả', style: TextStyle(color: Colors.grey)));
+      return const Center(
+        child: Text(
+          'Không tìm thấy kết quả',
+          style: TextStyle(color: Colors.grey),
+        ),
+      );
     }
 
     return ListView.builder(
@@ -599,15 +731,32 @@ class _LocationSearchScreenState extends State<LocationSearchScreen> {
     );
   }
 
-  Widget _buildLocationItem(String name, String address, String distance, {String? placeId}) {
+  Widget _buildLocationItem(
+    String name,
+    String address,
+    String distance, {
+    String? placeId,
+  }) {
     return ListTile(
       leading: const Icon(Icons.history, color: Colors.grey),
-      title: Text(name, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
+      title: Text(
+        name,
+        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+      ),
       subtitle: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (distance.isNotEmpty) Text(distance, style: const TextStyle(fontSize: 12, color: Colors.grey)),
-          Text(address, style: const TextStyle(fontSize: 12, color: Colors.grey), maxLines: 2, overflow: TextOverflow.ellipsis),
+          if (distance.isNotEmpty)
+            Text(
+              distance,
+              style: const TextStyle(fontSize: 12, color: Colors.grey),
+            ),
+          Text(
+            address,
+            style: const TextStyle(fontSize: 12, color: Colors.grey),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
         ],
       ),
       trailing: const Icon(Icons.more_vert, color: Colors.grey),
