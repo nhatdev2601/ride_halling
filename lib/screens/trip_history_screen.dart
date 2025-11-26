@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import '../theme/app_theme.dart';
-import '../models/models.dart';
+import '../services/ride_service.dart';
+import '../models/ride_models.dart'; // Model RideHistoryItem
 
 class TripHistoryScreen extends StatefulWidget {
   const TripHistoryScreen({super.key});
@@ -10,155 +12,78 @@ class TripHistoryScreen extends StatefulWidget {
 }
 
 class _TripHistoryScreenState extends State<TripHistoryScreen> {
-  final List<Trip> _tripHistory = [
-    Trip(
-      id: '1',
-      pickupAddress: '123 Đường ABC, Quận 1, TP.HCM',
-      destinationAddress: '456 Đường XYZ, Quận 3, TP.HCM',
-      pickupLat: 21.0285,
-      pickupLng: 105.8542,
-      destinationLat: 21.0245,
-      destinationLng: 105.8412,
-      vehicleType: VehicleType(
-        id: '1',
-        name: 'RideBike',
-        iconPath: 'motorcycle',
-        description: 'Tiết kiệm, đi nhanh trong thành phố',
-        baseFare: 15000,
-        pricePerKm: 3500,
-        estimatedTime: 12,
-        capacity: 1,
-      ),
-      driver: Driver(
-        id: '1',
-        name: 'NMhat',
-        photo: 'assets/images/driver_avatar.png',
-        phoneNumber: '0901234567',
-        vehiclePlate: '30A-12345',
-        vehicleModel: 'Honda Wave',
-        vehicleColor: 'Đỏ',
-        rating: 4.8,
-        totalTrips: 1250,
-      ),
-      fare: 32500,
-      createdAt: DateTime.now().subtract(const Duration(days: 1)),
-      status: TripStatus.completed,
-      paymentMethod: PaymentMethod.cash,
-      driverRating: 5.0,
-      feedback: 'Tài xế lịch sự, đúng giờ',
-    ),
-    Trip(
-      id: '2',
-      pickupAddress: '789 Đường DEF, Quận 7, TP.HCM',
-      destinationAddress: '321 Đường GHI, Quận 2, TP.HCM',
-      pickupLat: 21.0285,
-      pickupLng: 105.8542,
-      destinationLat: 21.0245,
-      destinationLng: 105.8412,
-      vehicleType: VehicleType(
-        id: '2',
-        name: 'RideCar',
-        iconPath: 'car',
-        description: 'Thoải mái cho 4 người',
-        baseFare: 25000,
-        pricePerKm: 8500,
-        estimatedTime: 15,
-        capacity: 4,
-      ),
-      driver: Driver(
-        id: '2',
-        name: 'Trần Thị Bình',
-        photo: 'assets/images/driver_avatar2.png',
-        phoneNumber: '0907654321',
-        vehiclePlate: '29B-67890',
-        vehicleModel: 'Toyota Vios',
-        vehicleColor: 'Trắng',
-        rating: 4.9,
-        totalTrips: 890,
-      ),
-      fare: 67500,
-      createdAt: DateTime.now().subtract(const Duration(days: 3)),
-      status: TripStatus.completed,
-      paymentMethod: PaymentMethod.wallet,
-      driverRating: 4.0,
-    ),
-    Trip(
-      id: '3',
-      pickupAddress: 'Sân bay Tân Sơn Nhất',
-      destinationAddress: '555 Đường JKL, Quận 1, TP.HCM',
-      pickupLat: 21.0285,
-      pickupLng: 105.8542,
-      destinationLat: 21.0245,
-      destinationLng: 105.8412,
-      vehicleType: VehicleType(
-        id: '3',
-        name: 'RidePremium',
-        iconPath: 'premium_car',
-        description: 'Xe sang, dịch vụ VIP',
-        baseFare: 45000,
-        pricePerKm: 15000,
-        estimatedTime: 10,
-        capacity: 4,
-      ),
-      driver: Driver(
-        id: '3',
-        name: 'Lê Minh Châu',
-        photo: 'assets/images/driver_avatar3.png',
-        phoneNumber: '0909876543',
-        vehiclePlate: '51F-11111',
-        vehicleModel: 'Mercedes C200',
-        vehicleColor: 'Đen',
-        rating: 4.95,
-        totalTrips: 567,
-      ),
-      fare: 120000,
-      createdAt: DateTime.now().subtract(const Duration(days: 7)),
-      status: TripStatus.completed,
-      paymentMethod: PaymentMethod.creditCard,
-      driverRating: 5.0,
-      feedback: 'Xe sang, tài xế chuyên nghiệp',
-    ),
-  ];
+  final RideService _rideService = RideService();
+  late Future<List<RideHistoryItem>> _historyFuture;
 
-  IconData _getVehicleIcon(String iconPath) {
-    switch (iconPath) {
-      case 'motorcycle':
-        return Icons.motorcycle;
-      case 'car':
-        return Icons.directions_car;
-      case 'premium_car':
-        return Icons.directions_car;
-      default:
-        return Icons.directions_car;
-    }
+  @override
+  void initState() {
+    super.initState();
+    _loadHistory();
   }
 
-  String _getPaymentMethodText(PaymentMethod method) {
-    switch (method) {
-      case PaymentMethod.cash:
-        return 'Tiền mặt';
-      case PaymentMethod.wallet:
-        return 'Ví điện tử';
-      case PaymentMethod.creditCard:
-        return 'Thẻ tín dụng';
-      case PaymentMethod.debitCard:
-        return 'Thẻ ghi nợ';
-    }
+  void _loadHistory() {
+    setState(() {
+      _historyFuture = _rideService.getRideHistory();
+    });
   }
 
+  // --- HELPERS ---
   String _formatDate(DateTime date) {
     final now = DateTime.now();
-    final difference = now.difference(date);
+    final localDate = date.toLocal(); 
+    final diff = now.difference(localDate);
 
-    if (difference.inDays == 0) {
-      return 'Hôm nay';
-    } else if (difference.inDays == 1) {
-      return 'Hôm qua';
-    } else if (difference.inDays < 7) {
-      return '${difference.inDays} ngày trước';
+    if (diff.inDays == 0 && localDate.day == now.day) {
+      return 'Hôm nay, ${DateFormat('HH:mm').format(localDate)}';
+    } else if (diff.inDays == 1 || (diff.inDays == 0 && localDate.day != now.day)) {
+      return 'Hôm qua, ${DateFormat('HH:mm').format(localDate)}';
     } else {
-      return '${date.day}/${date.month}/${date.year}';
+      return DateFormat('dd/MM/yyyy • HH:mm').format(localDate);
     }
+  }
+
+  String _formatCurrency(double amount) {
+    return NumberFormat.currency(locale: 'vi_VN', symbol: 'đ').format(amount);
+  }
+
+  Color _getStatusColor(String status) {
+    switch (status.toLowerCase()) {
+      case 'completed': return AppTheme.success;
+      case 'cancelled': return AppTheme.error;
+      case 'in_progress': return Colors.blue;
+      case 'accepted': return Colors.orange;
+      default: return Colors.grey;
+    }
+  }
+
+  String _getStatusText(String status) {
+    switch (status.toLowerCase()) {
+      case 'completed': return 'Hoàn thành';
+      case 'cancelled': return 'Đã hủy';
+      case 'in_progress': return 'Đang đi';
+      case 'accepted': return 'Tài xế nhận';
+      case 'requesting': return 'Đang tìm xe';
+      default: return status;
+    }
+  }
+
+  IconData _getVehicleIcon(String type) {
+    if (type.toLowerCase() == 'bike') return Icons.motorcycle;
+    if (type.toLowerCase().contains('car')) return Icons.directions_car;
+    return Icons.local_taxi;
+  }
+
+  String _getVehicleName(String type) {
+    if (type == 'bike') return "RideBike";
+    if (type == 'car') return "RideCar 4 chỗ";
+    if (type == 'business') return "RideCar 7 chỗ";
+    return type;
+  }
+
+  String _getPaymentMethodText(String? method) {
+    if (method == 'cash') return 'Tiền mặt';
+    if (method == 'wallet') return 'Ví điện tử';
+    return 'Tiền mặt'; // Mặc định
   }
 
   @override
@@ -177,222 +102,49 @@ class _TripHistoryScreenState extends State<TripHistoryScreen> {
           style: TextStyle(color: AppTheme.black, fontWeight: FontWeight.bold),
         ),
         centerTitle: true,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.filter_list, color: AppTheme.black),
-            onPressed: () {
-              // Show filter options
-            },
-          ),
-        ],
       ),
-      body: ListView.builder(
-        padding: const EdgeInsets.all(16),
-        itemCount: _tripHistory.length,
-        itemBuilder: (context, index) {
-          final trip = _tripHistory[index];
-          return Container(
-            margin: const EdgeInsets.only(bottom: 12),
-            decoration: BoxDecoration(
-              color: AppTheme.white,
-              borderRadius: BorderRadius.circular(12),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
-                onTap: () {
-                  _showTripDetails(trip);
-                },
-                borderRadius: BorderRadius.circular(12),
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Header with date and status
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            _formatDate(trip.createdAt),
-                            style: const TextStyle(
-                              fontSize: 14,
-                              color: AppTheme.grey,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: AppTheme.success.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: const Text(
-                              'Hoàn thành',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: AppTheme.success,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
+      
+      // 👇 DÙNG FUTURE BUILDER ĐỂ LOAD API
+      body: FutureBuilder<List<RideHistoryItem>>(
+        future: _historyFuture,
+        builder: (context, snapshot) {
+          // 1. Đang tải
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator(color: AppTheme.primaryGreen));
+          }
+          
+          // 2. Có lỗi
+          if (snapshot.hasError) {
+            return Center(child: Text("Lỗi tải dữ liệu: ${snapshot.error}"));
+          }
 
-                      const SizedBox(height: 12),
+          final rides = snapshot.data ?? [];
 
-                      // Trip route
-                      Row(
-                        children: [
-                          // Vehicle icon
-                          Container(
-                            width: 40,
-                            height: 40,
-                            decoration: BoxDecoration(
-                              color: AppTheme.primaryGreen.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Icon(
-                              _getVehicleIcon(trip.vehicleType.iconPath),
-                              color: AppTheme.primaryGreen,
-                              size: 20,
-                            ),
-                          ),
-
-                          const SizedBox(width: 12),
-
-                          // Route info
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    const Icon(
-                                      Icons.circle,
-                                      color: AppTheme.primaryGreen,
-                                      size: 8,
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                      child: Text(
-                                        trip.pickupAddress,
-                                        style: const TextStyle(
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.w500,
-                                        ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 8),
-                                Row(
-                                  children: [
-                                    const Icon(
-                                      Icons.square,
-                                      color: AppTheme.error,
-                                      size: 8,
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                      child: Text(
-                                        trip.destinationAddress,
-                                        style: const TextStyle(
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.w500,
-                                        ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-
-                      const SizedBox(height: 16),
-
-                      // Trip details
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                trip.vehicleType.name,
-                                style: const TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w600,
-                                  color: AppTheme.primaryGreen,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                _getPaymentMethodText(trip.paymentMethod),
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  color: AppTheme.grey,
-                                ),
-                              ),
-                            ],
-                          ),
-
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            children: [
-                              Text(
-                                '${trip.fare.toInt()}đ',
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                  color: AppTheme.black,
-                                ),
-                              ),
-                              if (trip.driverRating != null) ...[
-                                const SizedBox(height: 4),
-                                Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    const Icon(
-                                      Icons.star,
-                                      color: AppTheme.warning,
-                                      size: 14,
-                                    ),
-                                    const SizedBox(width: 2),
-                                    Text(
-                                      trip.driverRating!.toString(),
-                                      style: const TextStyle(
-                                        fontSize: 12,
-                                        color: AppTheme.grey,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ],
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
+          // 3. Danh sách trống
+          if (rides.isEmpty) {
+            return const Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.history, size: 60, color: Colors.grey),
+                  SizedBox(height: 16),
+                  Text("Bạn chưa có chuyến đi nào", style: TextStyle(color: Colors.grey)),
+                ],
               ),
+            );
+          }
+
+          // 4. Hiển thị danh sách
+          return RefreshIndicator(
+            onRefresh: () async => _loadHistory(),
+            color: AppTheme.primaryGreen,
+            child: ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: rides.length,
+              itemBuilder: (context, index) {
+                final trip = rides[index];
+                return _buildHistoryItem(trip);
+              },
             ),
           );
         },
@@ -400,316 +152,134 @@ class _TripHistoryScreenState extends State<TripHistoryScreen> {
     );
   }
 
-  void _showTripDetails(Trip trip) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => Container(
-        height: MediaQuery.of(context).size.height * 0.8,
-        decoration: const BoxDecoration(
-          color: AppTheme.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-        ),
-        child: Column(
-          children: [
-            // Handle
-            Container(
-              margin: const EdgeInsets.only(top: 8),
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: AppTheme.grey.withOpacity(0.3),
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-
-            // Header
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.close),
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                  const Expanded(
-                    child: Text(
-                      'Chi tiết chuyến đi',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 48),
-                ],
-              ),
-            ),
-
-            // Content
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+  // Widget Item (Card)
+  Widget _buildHistoryItem(RideHistoryItem trip) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: AppTheme.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8, offset: const Offset(0, 2)),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () {
+            // _showTripDetails(trip); // Tạm thời comment vì chưa có API lấy chi tiết full
+          },
+          borderRadius: BorderRadius.circular(12),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Header: Ngày & Trạng thái
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    // Trip summary
+                    Text(
+                      _formatDate(trip.createdAt),
+                      style: const TextStyle(fontSize: 14, color: AppTheme.grey, fontWeight: FontWeight.w500),
+                    ),
                     Container(
-                      padding: const EdgeInsets.all(16),
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
-                        color: AppTheme.lightGrey.withOpacity(0.5),
-                        borderRadius: BorderRadius.circular(12),
+                        color: _getStatusColor(trip.status).withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(4),
                       ),
-                      child: Column(
-                        children: [
-                          Row(
-                            children: [
-                              const Icon(
-                                Icons.circle,
-                                color: AppTheme.primaryGreen,
-                                size: 12,
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  trip.pickupAddress,
-                                  style: const TextStyle(fontSize: 14),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          Row(
-                            children: [
-                              const Icon(
-                                Icons.square,
-                                color: AppTheme.error,
-                                size: 12,
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  trip.destinationAddress,
-                                  style: const TextStyle(fontSize: 14),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-
-                    const SizedBox(height: 24),
-
-                    // Driver info
-                    if (trip.driver != null) ...[
-                      const Text(
-                        'Thông tin tài xế',
+                      child: Text(
+                        _getStatusText(trip.status),
                         style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                          color: _getStatusColor(trip.status),
+                          fontWeight: FontWeight.w500,
                         ),
-                      ),
-
-                      const SizedBox(height: 12),
-
-                      Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          border: Border.all(color: AppTheme.lightGrey),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Row(
-                          children: [
-                            CircleAvatar(
-                              radius: 30,
-                              backgroundColor: AppTheme.lightGrey,
-                              child: Icon(
-                                Icons.person,
-                                size: 30,
-                                color: AppTheme.grey,
-                              ),
-                            ),
-                            const SizedBox(width: 16),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    trip.driver!.name,
-                                    style: const TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    '${trip.driver!.vehicleModel} - ${trip.driver!.vehiclePlate}',
-                                    style: const TextStyle(
-                                      fontSize: 14,
-                                      color: AppTheme.grey,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Row(
-                                    children: [
-                                      const Icon(
-                                        Icons.star,
-                                        color: AppTheme.warning,
-                                        size: 16,
-                                      ),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        '${trip.driver!.rating} (${trip.driver!.totalTrips} chuyến)',
-                                        style: const TextStyle(
-                                          fontSize: 12,
-                                          color: AppTheme.grey,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-
-                      const SizedBox(height: 24),
-                    ],
-
-                    // Payment details
-                    const Text(
-                      'Chi tiết thanh toán',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
                       ),
                     ),
-
-                    const SizedBox(height: 12),
-
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        border: Border.all(color: AppTheme.lightGrey),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Column(
-                        children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              const Text('Loại xe:'),
-                              Text(
-                                trip.vehicleType.name,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              const Text('Phương thức thanh toán:'),
-                              Text(
-                                _getPaymentMethodText(trip.paymentMethod),
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const Divider(height: 24),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              const Text(
-                                'Tổng cược:',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              Text(
-                                '${trip.fare.toInt()}đ',
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                  color: AppTheme.primaryGreen,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-
-                    if (trip.feedback != null) ...[
-                      const SizedBox(height: 24),
-
-                      const Text(
-                        'Đánh giá của bạn',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-
-                      const SizedBox(height: 12),
-
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: AppTheme.lightGrey.withOpacity(0.5),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            if (trip.driverRating != null)
-                              Row(
-                                children: [
-                                  ...List.generate(5, (index) {
-                                    return Icon(
-                                      Icons.star,
-                                      size: 20,
-                                      color: index < trip.driverRating!
-                                          ? AppTheme.warning
-                                          : AppTheme.grey.withOpacity(0.3),
-                                    );
-                                  }),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    trip.driverRating!.toString(),
-                                    style: const TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            if (trip.feedback!.isNotEmpty) ...[
-                              const SizedBox(height: 8),
-                              Text(
-                                trip.feedback!,
-                                style: const TextStyle(fontSize: 14),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                    ],
                   ],
                 ),
-              ),
+                const SizedBox(height: 12),
+
+                // Body: Xe & Địa chỉ
+                Row(
+                  children: [
+                    Container(
+                      width: 40, height: 40,
+                      decoration: BoxDecoration(
+                        color: AppTheme.primaryGreen.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(_getVehicleIcon(trip.vehicleType), color: AppTheme.primaryGreen, size: 20),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Pickup
+                          Row(children: [
+                            const Icon(Icons.circle, color: AppTheme.primaryGreen, size: 8),
+                            const SizedBox(width: 8),
+                            Expanded(child: Text(trip.pickupAddress, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500), maxLines: 1, overflow: TextOverflow.ellipsis)),
+                          ]),
+                          const SizedBox(height: 8),
+                          // Dropoff
+                          Row(children: [
+                            const Icon(Icons.square, color: AppTheme.error, size: 8),
+                            const SizedBox(width: 8),
+                            Expanded(child: Text(trip.dropoffAddress, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500), maxLines: 1, overflow: TextOverflow.ellipsis)),
+                          ]),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 16),
+
+                // Footer: Tên xe, Payment, Giá
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _getVehicleName(trip.vehicleType),
+                          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppTheme.primaryGreen),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          _getPaymentMethodText(trip.paymentMethod),
+                          style: const TextStyle(fontSize: 12, color: AppTheme.grey),
+                        ),
+                      ],
+                    ),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Text(
+                          _formatCurrency(trip.totalFare),
+                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppTheme.black),
+                        ),
+                        if (trip.status == 'completed') ...[
+                           const SizedBox(height: 4),
+                           // Fake rating tạm thời vì API list chưa trả về rating
+                           const Row(children: [
+                             Icon(Icons.star, color: AppTheme.warning, size: 14),
+                             SizedBox(width: 2),
+                             Text('5.0', style: TextStyle(fontSize: 12, color: AppTheme.grey)),
+                           ])
+                        ]
+                      ],
+                    ),
+                  ],
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );

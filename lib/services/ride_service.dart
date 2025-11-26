@@ -157,4 +157,29 @@ print('🔻 ĐANG GỌI API CANCEL CHO ID: $rideId');
       return false;
     }
   }
+  Future<List<RideHistoryItem>> getRideHistory() async {
+    try {
+      final token = await _authService.getAccessToken();
+      
+      // Gọi GET /api/Rides
+      final response = await http.get(
+        Uri.parse('$baseUrl'), 
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      ).timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 200) {
+        final List<dynamic> jsonList = jsonDecode(response.body);
+        return jsonList.map((json) => RideHistoryItem.fromJson(json)).toList();
+      } else {
+        print('❌ Lỗi lấy lịch sử: ${response.statusCode}');
+        return [];
+      }
+    } catch (e) {
+      print('❌ Exception: $e');
+      return [];
+    }
+  }
 }
