@@ -1,4 +1,4 @@
-using Cassandra;
+﻿using Cassandra;
 using api_ride.Models;
 using api_ride.Models.DTOs;
 using api_ride.Services;
@@ -10,10 +10,11 @@ namespace api_ride.Repositories
         Task<string> CreateRideAsync(CreateRideRequest request, string passengerId, CalculateFareResponse fareInfo);
         Task<Ride?> GetRideByIdAsync(string rideId);
         Task<bool> UpdateRideStatusAsync(string rideId, string status, string? driverId = null);
-        Task<List<Ride>> GetRidesByPassengerAsync(string passengerId, int limit = 20);
+        Task<List<RideHistoryDto>> GetRidesByPassengerAsync(string passengerId, int limit = 20);
         Task<List<Ride>> GetRidesByDriverAsync(string driverId, int limit = 20);
         Task<List<Ride>> GetActiveRidesAsync();
         Task<bool> UpdateRideAsync(Ride ride);
+        Task<bool> CancelRideAsync(string rideId, string reason);
     }
 
     public class RideRepository : IRideRepository
@@ -30,7 +31,12 @@ namespace api_ride.Repositories
         {
             var rideId = Guid.NewGuid();
             var now = DateTime.UtcNow;
-
+            decimal SafeDecimal(double value)
+            {
+                // Làm tròn 2 số thập phân để tránh lỗi "scale > 28"
+                // Nếu là VNĐ thì làm tròn 0 luôn cũng được: Math.Round((decimal)value, 0)
+                return Math.Round((decimal)value, 2);
+            }
             var ride = new Ride
             {
                 RideId = rideId,
@@ -43,14 +49,18 @@ namespace api_ride.Repositories
                 DropoffAddress = request.DestinationLocation.Address,
                 VehicleType = request.VehicleType,
                 Status = "requesting",
-                EstimatedDistance = fareInfo.Distance,
+                EstimatedDistance = SafeDecimal(fareInfo.Distance),
+
+                // Duration thường là int, giữ nguyên
                 EstimatedDuration = fareInfo.EstimatedDuration,
-                BaseFare = (decimal)fareInfo.BaseFare,
-                DistanceFare = (decimal)fareInfo.DistanceFare,
-                TimeFare = (decimal)fareInfo.TimeFare,
-                SurgeFare = (decimal)fareInfo.SurgeFare,
-                Discount = (decimal)fareInfo.Discount,
-                TotalFare = (decimal)fareInfo.TotalFare,
+
+                // Tiền bạc là decimal, dùng SafeDecimal trực tiếp (KHÔNG được ép kiểu thủ công)
+                BaseFare = SafeDecimal(fareInfo.BaseFare),
+                DistanceFare = SafeDecimal(fareInfo.DistanceFare),
+                TimeFare = SafeDecimal(fareInfo.TimeFare),
+                SurgeFare = SafeDecimal(fareInfo.SurgeFare),
+                Discount = SafeDecimal(fareInfo.Discount),
+                TotalFare = SafeDecimal(fareInfo.TotalFare),
                 PaymentMethod = request.PaymentMethod,
                 PaymentStatus = "pending",
                 PromoCode = string.IsNullOrEmpty(request.PromoCode) ? null : request.PromoCode,
@@ -61,12 +71,21 @@ namespace api_ride.Repositories
             return success ? rideId.ToString() : throw new InvalidOperationException("Failed to create ride");
         }
 
-        // L?y th�ng tin ride
+        // L?y thông tin ride
         public async Task<Ride?> GetRideByIdAsync(string rideId)
         {
             return await _cassandraService.GetRideByIdAsync(Guid.Parse(rideId));
         }
+        public async Task<bool> CancelRideAsync(string rideId, string reason)
+        {
+            if (!Guid.TryParse(rideId, out var rideGuid))
+            {
+                return false;
+            }
 
+            // Gọi xuống Service để chạy cái Batch khổng lồ kia
+            return await _cassandraService.CancelRideAsync(rideGuid, reason);
+        }
         // C?p nh?t status
         public async Task<bool> UpdateRideStatusAsync(string rideId, string status, string? driverId = null)
         {
@@ -84,7 +103,7 @@ namespace api_ride.Repositories
             return await _cassandraService.UpdateRideAsync(ride);
         }
 
-        public async Task<List<Ride>> GetRidesByPassengerAsync(string passengerId, int limit = 20)
+        public async Task<List<RideHistoryDto>> GetRidesByPassengerAsync(string passengerId, int limit = 20)
         {
             return await _cassandraService.GetRidesByPassengerAsync(Guid.Parse(passengerId), limit);
         }

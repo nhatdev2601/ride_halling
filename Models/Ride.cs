@@ -1,4 +1,4 @@
-using Cassandra.Mapping.Attributes;
+﻿using Cassandra.Mapping.Attributes;
 
 namespace api_ride.Models
 {
@@ -16,8 +16,9 @@ namespace api_ride.Models
         public Guid? DriverId { get; set; }
 
         [Column("status")]
-        public string Status { get; set; } = string.Empty; // requesting, accepted, arrived, in_progress, completed, cancelled
+        public string Status { get; set; } = string.Empty;
 
+        // 👇 Tọa độ giữ nguyên double là đúng rồi (DB là double)
         [Column("pickup_location_lat")]
         public double PickupLocationLat { get; set; }
 
@@ -39,11 +40,12 @@ namespace api_ride.Models
         [Column("vehicle_type")]
         public string VehicleType { get; set; } = string.Empty;
 
+        // 👇 SỬA 2 DÒNG NÀY THÀNH DECIMAL (Cho khớp DB) 👇
         [Column("estimated_distance")]
-        public double EstimatedDistance { get; set; }
+        public decimal EstimatedDistance { get; set; }
 
         [Column("actual_distance")]
-        public double? ActualDistance { get; set; }
+        public decimal? ActualDistance { get; set; }
 
         [Column("estimated_duration")]
         public int EstimatedDuration { get; set; }
@@ -51,6 +53,7 @@ namespace api_ride.Models
         [Column("actual_duration")]
         public int? ActualDuration { get; set; }
 
+        // 👇 Tiền bạc giữ nguyên decimal là chuẩn rồi
         [Column("base_fare")]
         public decimal BaseFare { get; set; }
 
@@ -73,7 +76,7 @@ namespace api_ride.Models
         public string PaymentMethod { get; set; } = string.Empty;
 
         [Column("payment_status")]
-        public string PaymentStatus { get; set; } = "pending"; // pending, completed, failed
+        public string PaymentStatus { get; set; } = "pending";
 
         [Column("promo_code")]
         public string? PromoCode { get; set; }

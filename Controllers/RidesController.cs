@@ -158,34 +158,33 @@ namespace api_ride.Controllers
         }
 
         [HttpGet]
-        public async Task<ActionResult<List<Models.Ride>>> GetUserRides()
+        [HttpGet]
+        public async Task<ActionResult<List<RideHistoryDto>>> GetUserRides()
         {
             try
             {
                 var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
                 var userRole = User.FindFirst(ClaimTypes.Role)?.Value;
-                
+
                 if (string.IsNullOrEmpty(userId))
                 {
                     return Unauthorized();
                 }
 
-                List<Models.Ride> rides;
-                
-                if (userRole == "passenger")
+                if (Guid.TryParse(userId, out var userGuid))
                 {
-                    rides = await _rideRepository.GetRidesByPassengerAsync(userId);
-                }
-                else if (userRole == "driver")
-                {
-                    rides = await _rideRepository.GetRidesByDriverAsync(userId);
-                }
-                else
-                {
-                    return BadRequest(new { error = "Invalid user role" });
+                    // Lưu ý: Hàm Repository của mày nếu nhận string thì để nguyên, 
+                    // nếu nhận Guid thì truyền userGuid vào.
+                    // Dựa theo lỗi của mày thì Repo đang nhận string nhưng bên trong nó parse guid.
+                    // Hãy check kỹ lại hàm GetRidesByPassengerAsync bên RideRepository xem nó nhận string hay Guid.
+
+                    // Cách an toàn nhất:
+                    var rides = await _rideRepository.GetRidesByPassengerAsync(userId);
+                    return Ok(rides);
                 }
 
-                return Ok(rides);
+
+                return BadRequest(new { error = "Invalid user role" });
             }
             catch (Exception ex)
             {
@@ -239,9 +238,50 @@ namespace api_ride.Controllers
             }
         }
 
-    
 
-    
+        [HttpPost("{id}/cancel")]
+        public async Task<IActionResult> CancelRide(string id, [FromBody] CancelRideRequest request)
+        {
+            try
+            {
+                if (!Guid.TryParse(id, out var rideGuid))
+                    return BadRequest(new { message = "Invalid ID" });
+
+                // 1. Lấy User ID từ Token (người đang đăng nhập)
+                var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+                // 2. Kiểm tra chuyến xe có tồn tại ko
+                var ride = await _rideRepository.GetRideByIdAsync(id);
+                if (ride == null) return NotFound(new { message = "Ride not found" });
+
+                // 3. Security Check: Chỉ Passenger của chuyến đó hoặc Admin mới được hủy
+                // (Nếu sau này làm App cho Tài xế thì thêm check DriverId nữa)
+                if (ride.PassengerId.ToString() != userId)
+                {
+                    return Forbid(); // Mày không phải chủ chuyến xe này!
+                }
+
+                // 4. Gọi Service xử lý DB
+                var result = await _rideRepository.CancelRideAsync(id, request.Reason);
+
+                if (!result)
+                    return BadRequest(new { message = "Could not cancel ride (Already completed or error)" });
+
+                return Ok(new { message = "Ride cancelled successfully" });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = ex.Message });
+            }
+        }
+
+        // DTO đơn giản
+        public class CancelRideRequest
+        {
+            public string Reason { get; set; } = "Changed plans";
+        }
+
 
         private bool IsValidStatusTransition(string currentStatus, string newStatus, string? userRole)
         {

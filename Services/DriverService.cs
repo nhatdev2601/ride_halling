@@ -26,7 +26,7 @@ namespace api_ride.Services
         {
             try
             {
-                _logger.LogInformation($"🔍 Bắt đầu tìm xe quanh: {latitude}, {longitude} (Loại: {vehicleType})");
+                _logger.LogInformation($" Bắt đầu tìm xe quanh: {latitude}, {longitude} (Loại: {vehicleType})");
                 // 1. Tạo Geohash xung quanh
                 var geohashes = GenerateGeohashesAroundLocation(latitude, longitude);
 

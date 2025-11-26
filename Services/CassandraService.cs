@@ -1,6 +1,7 @@
-﻿using Cassandra;
+﻿using api_ride.Models;
+using api_ride.Models.DTOs;
+using Cassandra;
 using Cassandra.Mapping;
-using api_ride.Models;
 using CassandraSession = Cassandra.ISession;
 
 namespace api_ride.Services
@@ -21,10 +22,11 @@ namespace api_ride.Services
         Task<bool> CreateRideAsync(Ride ride);
         Task<Ride?> GetRideByIdAsync(Guid rideId);
         Task<bool> UpdateRideAsync(Ride ride);
-        Task<List<Ride>> GetRidesByPassengerAsync(Guid passengerId, int limit = 20);
+        Task<List<RideHistoryDto>> GetRidesByPassengerAsync(Guid passengerId, int limit = 20);
         Task<List<Ride>> GetRidesByDriverAsync(Guid driverId, int limit = 20);
         Task<List<Ride>> GetActiveRidesAsync();
-        
+        // Trong ICassandraService
+        Task<bool> CancelRideAsync(Guid rideId, string reason);
         // Driver operations
         Task<Driver?> GetDriverByIdAsync(Guid driverId);
         Task<Driver?> GetDriverByUserIdAsync(Guid userId);
@@ -88,26 +90,15 @@ namespace api_ride.Services
         {
             try
             {
-                // Direct CQL without mapper to avoid any mapping issues
-                var cql = "SELECT user_id, full_name, phone_number, email, password, user_type, status, created_at, updated_at FROM users WHERE email = ? ALLOW FILTERING";
-                var statement = await _session.PrepareAsync(cql);
-                var result = await _session.ExecuteAsync(statement.Bind(email));
-                var row = result.FirstOrDefault();
+                // Bước 1: Tìm ID từ bảng phụ (Query cực nhanh vì email là Key)
+                var idCql = "SELECT user_id FROM users_by_email WHERE email = ?";
+                var idRow = (await _session.ExecuteAsync((await _session.PrepareAsync(idCql)).Bind(email))).FirstOrDefault();
 
-                if (row == null) return null;
+                if (idRow == null) return null; // Không tìm thấy email
 
-                return new User
-                {
-                    UserId = row.GetValue<Guid>("user_id"),
-                    FullName = row.GetValue<string>("full_name") ?? "",
-                    Phone = row.GetValue<string>("phone_number") ?? "",
-                    Email = row.GetValue<string>("email") ?? "",
-                    Password = row.GetValue<string>("password") ?? "",
-                    Role = row.GetValue<string>("user_type") ?? "",
-                    Status = row.GetValue<string>("status") ?? "active",
-                    CreatedAt = row.GetValue<DateTime>("created_at"),
-                    UpdatedAt = row.GetValue<DateTime>("updated_at")
-                };
+                // Bước 2: Lấy thông tin chi tiết từ bảng chính
+                var userId = idRow.GetValue<Guid>("user_id");
+                return await GetUserByIdAsync(userId);
             }
             catch (Exception ex)
             {
@@ -126,27 +117,46 @@ namespace api_ride.Services
                 user.CreatedAt = DateTime.UtcNow;
                 user.UpdatedAt = DateTime.UtcNow;
 
-                // Direct CQL insert to avoid any mapping complexity
-                var cql = "INSERT INTO users (user_id, full_name, phone_number, email, password, user_type, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
-                var statement = await _session.PrepareAsync(cql);
-                await _session.ExecuteAsync(statement.Bind(
-                    user.UserId,
-                    user.FullName,
-                    user.Phone,
-                    user.Email,
-                    user.Password,
-                    user.Role,
-                    user.Status,
-                    user.CreatedAt,
-                    user.UpdatedAt
-                ));
+                // 1. Chuẩn bị câu lệnh Insert cho bảng chính (users)
+                var queryUsers = "INSERT INTO users (user_id, full_name, phone_number, email, password, user_type, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                var psUsers = await _session.PrepareAsync(queryUsers);
+                var statementUsers = psUsers.Bind(
+                    user.UserId, user.FullName, user.Phone, user.Email, user.Password,
+                    user.Role, user.Status, user.CreatedAt, user.UpdatedAt
+                );
 
-                _logger.LogInformation("User created: {UserId}", user.UserId);
+                // 2. Chuẩn bị câu lệnh Insert cho bảng lookup Email (users_by_email)
+                // Lưu ý: Chỉ lưu những thông tin cần thiết để hiển thị nhanh hoặc validate
+                var queryEmail = "INSERT INTO users_by_email (email, user_id, full_name, phone_number, user_type, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)";
+                var psEmail = await _session.PrepareAsync(queryEmail);
+                var statementEmail = psEmail.Bind(
+                    user.Email, user.UserId, user.FullName, user.Phone,
+                    user.Role, user.Status, user.CreatedAt
+                );
+
+                // 3. Chuẩn bị câu lệnh Insert cho bảng lookup Phone (users_by_phone)
+                var queryPhone = "INSERT INTO users_by_phone (phone_number, user_id, email, full_name, status, user_type, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)";
+                var psPhone = await _session.PrepareAsync(queryPhone);
+                var statementPhone = psPhone.Bind(
+                    user.Phone, user.UserId, user.Email, user.FullName,
+                    user.Status, user.Role, user.CreatedAt
+                );
+
+                // 4. Gộp tất cả vào một BATCH
+                var batch = new BatchStatement();
+                batch.Add(statementUsers);
+                batch.Add(statementEmail);
+                batch.Add(statementPhone);
+
+                // 5. Thực thi Batch (Chỉ 1 lần gọi network)
+                await _session.ExecuteAsync(batch);
+
+                _logger.LogInformation("User created fully in 3 tables: {UserId}", user.UserId);
                 return true;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error creating user");
+                _logger.LogError(ex, "Error creating user in batch");
                 return false;
             }
         }
@@ -157,19 +167,24 @@ namespace api_ride.Services
             {
                 user.UpdatedAt = DateTime.UtcNow;
 
-                var cql = "UPDATE users SET full_name = ?, phone_number = ?, password = ?, user_type = ?, status = ?, updated_at = ? WHERE user_id = ?";
-                var statement = await _session.PrepareAsync(cql);
-                await _session.ExecuteAsync(statement.Bind(
-                    user.FullName,
-                    user.Phone,
-                    user.Password,
-                    user.Role,
-                    user.Status,
-                    user.UpdatedAt,
-                    user.UserId
-                ));
+                // 1. Update bảng chính
+                var cqlMain = "UPDATE users SET full_name = ?, password = ?, updated_at = ? WHERE user_id = ?";
+                var stMain = (await _session.PrepareAsync(cqlMain)).Bind(user.FullName, user.Password, user.UpdatedAt, user.UserId);
 
-                _logger.LogInformation("User updated: {UserId}", user.UserId);
+                // 2. Update bảng users_by_email (Cần email cũ để làm key, tao giả sử user.Email không đổi)
+                var cqlEmail = "UPDATE users_by_email SET full_name = ? WHERE email = ?";
+                var stEmail = (await _session.PrepareAsync(cqlEmail)).Bind(user.FullName, user.Email);
+
+                // 3. Update bảng users_by_phone
+                var cqlPhone = "UPDATE users_by_phone SET full_name = ? WHERE phone_number = ?";
+                var stPhone = (await _session.PrepareAsync(cqlPhone)).Bind(user.FullName, user.Phone);
+
+                var batch = new BatchStatement();
+                batch.Add(stMain);
+                batch.Add(stEmail);
+                batch.Add(stPhone);
+
+                await _session.ExecuteAsync(batch);
                 return true;
             }
             catch (Exception ex)
@@ -260,26 +275,22 @@ namespace api_ride.Services
             }
         }
 
-
-        // Ride operations
         public async Task<bool> CreateRideAsync(Ride ride)
         {
             try
             {
-                
+                // 1. Insert vào bảng chính (rides)
+                var cqlMain = @"
+            INSERT INTO rides (
+                ride_id, passenger_id, driver_id, status, pickup_location_lat, pickup_location_lng,
+                pickup_address, dropoff_location_lat, dropoff_location_lng, dropoff_address,
+                vehicle_type, estimated_distance, estimated_duration, base_fare, distance_fare,
+                time_fare, surge_fare, discount, total_fare, payment_method, payment_status,
+                promo_code, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
-                var cql = @"
-                    INSERT INTO rides (
-                        ride_id, passenger_id, driver_id, status, pickup_location_lat, pickup_location_lng,
-                        pickup_address, dropoff_location_lat, dropoff_location_lng, dropoff_address,
-                        vehicle_type, estimated_distance, estimated_duration, base_fare, distance_fare,
-                        time_fare, surge_fare, discount, total_fare, payment_method, payment_status,
-                        promo_code, created_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ";
-                
-                var statement = await _session.PrepareAsync(cql);
-                await _session.ExecuteAsync(statement.Bind(
+                var psMain = await _session.PrepareAsync(cqlMain);
+                var stMain = psMain.Bind(
                     ride.RideId, ride.PassengerId, ride.DriverId, ride.Status,
                     ride.PickupLocationLat, ride.PickupLocationLng, ride.PickupAddress,
                     ride.DropoffLocationLat, ride.DropoffLocationLng, ride.DropoffAddress,
@@ -287,8 +298,45 @@ namespace api_ride.Services
                     ride.BaseFare, ride.DistanceFare, ride.TimeFare, ride.SurgeFare,
                     ride.Discount, ride.TotalFare, ride.PaymentMethod, ride.PaymentStatus,
                     ride.PromoCode, ride.CreatedAt
-                ));
-                
+                );
+
+                // 2. Insert vào bảng rides_by_passenger (ĐỂ USER XEM ĐƯỢC LỊCH SỬ)
+                // Lưu ý: Bảng này chỉ cần vài cột quan trọng để hiển thị list
+                var cqlPassenger = @"
+            INSERT INTO rides_by_passenger (
+                passenger_id, created_at, ride_id, driver_id, 
+                pickup_address, dropoff_address, status, total_fare, vehicle_type
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+
+                var psPassenger = await _session.PrepareAsync(cqlPassenger);
+                var stPassenger = psPassenger.Bind(
+                    ride.PassengerId, ride.CreatedAt, ride.RideId, ride.DriverId,
+                    ride.PickupAddress, ride.DropoffAddress, ride.Status, ride.TotalFare, ride.VehicleType
+                );
+
+                // 3. (Tùy chọn) Nếu lúc tạo ride đã có driver (ví dụ book xe tiện chuyến), 
+                // thì insert luôn vào rides_by_driver. Nhưng thường lúc tạo là status='requesting' chưa có tài xế,
+                // nên đoạn này có thể bỏ qua, chờ lúc tài xế nhận chuyến thì update sau.
+
+                // 4. Insert vào rides_by_status (Để Admin hoặc System quét các chuyến đang 'requesting')
+                var cqlStatus = @"
+            INSERT INTO rides_by_status (
+                status, created_at, ride_id, passenger_id, driver_id, total_fare
+            ) VALUES (?, ?, ?, ?, ?, ?)";
+
+                var psStatus = await _session.PrepareAsync(cqlStatus);
+                var stStatus = psStatus.Bind(
+                    ride.Status, ride.CreatedAt, ride.RideId, ride.PassengerId, ride.DriverId, ride.TotalFare
+                );
+
+                // GỘP LẠI CHẠY 1 LẦN
+                var batch = new BatchStatement();
+                batch.Add(stMain);
+                batch.Add(stPassenger);
+                batch.Add(stStatus);
+
+                await _session.ExecuteAsync(batch);
+
                 return true;
             }
             catch (Exception ex)
@@ -302,21 +350,21 @@ namespace api_ride.Services
         {
             try
             {
-               
-
+                // ... code query giữ nguyên ...
                 var cql = "SELECT * FROM rides WHERE ride_id = ?";
                 var statement = await _session.PrepareAsync(cql);
                 var result = await _session.ExecuteAsync(statement.Bind(rideId));
                 var row = result.FirstOrDefault();
-                
+
                 if (row == null) return null;
 
                 return MapRowToRide(row);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error getting ride by ID");
-                return null;
+                // 👇 SỬA CHỖ NÀY: Đừng return null nữa, throw lỗi ra để thấy nguyên nhân!
+                _logger.LogError(ex, "Error getting ride by ID: " + ex.Message);
+                throw;
             }
         }
 
@@ -324,49 +372,102 @@ namespace api_ride.Services
         {
             try
             {
-                
-              
+                // BƯỚC 1: Phải lấy thông tin cũ trong DB ra trước 
+                // (Để biết status cũ là gì mà xóa bên bảng rides_by_status)
+                var oldRideCql = "SELECT status, created_at FROM rides WHERE ride_id = ?";
+                var oldRideRow = (await _session.ExecuteAsync(
+                    (await _session.PrepareAsync(oldRideCql)).Bind(ride.RideId)
+                )).FirstOrDefault();
 
-                var cql = @"
-                    UPDATE rides SET 
-                        driver_id = ?, status = ?, accepted_at = ?, started_at = ?, completed_at = ?,
-                        cancelled_at = ?, cancellation_reason = ?, actual_distance = ?, actual_duration = ?,
-                        driver_rating = ?, passenger_rating = ?, notes = ?
-                    WHERE ride_id = ?
-                ";
-                
-                var statement = await _session.PrepareAsync(cql);
-                await _session.ExecuteAsync(statement.Bind(
+                if (oldRideRow == null) return false;
+
+                string oldStatus = oldRideRow.GetValue<string>("status");
+                DateTime createdAt = oldRideRow.GetValue<DateTime>("created_at"); // Cần cái này vì nó là Clustering Key
+
+                // BƯỚC 2: Chuẩn bị Batch (Gom tất cả hành động vào 1 cục)
+                var batch = new BatchStatement();
+
+                // 2.1. Update bảng chính (rides)
+                var cqlMain = @"
+            UPDATE rides SET 
+                driver_id = ?, status = ?, accepted_at = ?, started_at = ?, completed_at = ?,
+                cancelled_at = ?, cancellation_reason = ?, actual_distance = ?, actual_duration = ?,
+                driver_rating = ?, passenger_rating = ?, notes = ?
+            WHERE ride_id = ?
+        ";
+                var stMain = await _session.PrepareAsync(cqlMain);
+                batch.Add(stMain.Bind(
                     ride.DriverId, ride.Status, ride.AcceptedAt, ride.StartedAt, ride.CompletedAt,
                     ride.CancelledAt, ride.CancellationReason, ride.ActualDistance, ride.ActualDuration,
                     ride.DriverRating, ride.PassengerRating, ride.Notes, ride.RideId
                 ));
-                
+
+                // 2.2. Update bảng rides_by_passenger (Cập nhật status cho khách thấy)
+                var cqlPassenger = "UPDATE rides_by_passenger SET status = ? WHERE passenger_id = ? AND created_at = ? AND ride_id = ?";
+                var stPassenger = await _session.PrepareAsync(cqlPassenger);
+                batch.Add(stPassenger.Bind(ride.Status, ride.PassengerId, createdAt, ride.RideId));
+
+                // 2.3. Update bảng rides_by_driver (Nếu đã có tài xế)
+                if (ride.DriverId != null)
+                {
+                    // Lưu ý: Nếu status chuyển từ 'requesting' sang 'accepted', lúc này mới có DriverId.
+                    // Nên insert vào bảng này thay vì update nếu chưa có record. 
+                    // Nhưng để đơn giản, ta dùng INSERT (trong Cassandra INSERT đè lên record cũ cũng tính là Update)
+                    var cqlDriver = @"
+                INSERT INTO rides_by_driver (driver_id, created_at, ride_id, status, dropoff_address, passenger_id, pickup_address, total_fare, vehicle_type)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ";
+                    var stDriver = await _session.PrepareAsync(cqlDriver);
+                    batch.Add(stDriver.Bind(
+                        ride.DriverId, createdAt, ride.RideId, ride.Status,
+                        ride.DropoffAddress, ride.PassengerId, ride.PickupAddress, ride.TotalFare, ride.VehicleType
+                    ));
+                }
+
+                // 2.4. XỬ LÝ BẢNG rides_by_status (Quan trọng nhất)
+                if (oldStatus != ride.Status) // Chỉ làm khi trạng thái thay đổi
+                {
+                    // A. Xóa dòng ở trạng thái cũ (Ví dụ xóa dòng ở cột 'requesting')
+                    var cqlDeleteOld = "DELETE FROM rides_by_status WHERE status = ? AND created_at = ? AND ride_id = ?";
+                    var stDeleteOld = await _session.PrepareAsync(cqlDeleteOld);
+                    batch.Add(stDeleteOld.Bind(oldStatus, createdAt, ride.RideId));
+
+                    // B. Thêm dòng vào trạng thái mới (Ví dụ thêm vào cột 'accepted')
+                    var cqlInsertNew = @"
+                INSERT INTO rides_by_status (status, created_at, ride_id, driver_id, passenger_id, total_fare)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ";
+                    var stInsertNew = await _session.PrepareAsync(cqlInsertNew);
+                    batch.Add(stInsertNew.Bind(ride.Status, createdAt, ride.RideId, ride.DriverId, ride.PassengerId, ride.TotalFare));
+                }
+
+                // BƯỚC 3: Bùm! Thực thi tất cả
+                await _session.ExecuteAsync(batch);
+
                 return true;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error updating ride");
+                _logger.LogError(ex, "Error updating ride full flow");
                 return false;
             }
         }
 
-        public async Task<List<Ride>> GetRidesByPassengerAsync(Guid passengerId, int limit = 20)
+        public async Task<List<RideHistoryDto>> GetRidesByPassengerAsync(Guid passengerId, int limit = 20)
         {
             try
             {
-                
-
-                var cql = "SELECT * FROM rides WHERE passenger_id = ? LIMIT ? ALLOW FILTERING";
+                var cql = "SELECT * FROM rides_by_passenger WHERE passenger_id = ? LIMIT ?";
                 var statement = await _session.PrepareAsync(cql);
                 var result = await _session.ExecuteAsync(statement.Bind(passengerId, limit));
-                
-                return result.Select(MapRowToRide).ToList();
+
+                // 👇 QUAN TRỌNG: Phải dùng hàm Map sang DTO
+                return result.Select(MapRowToRideHistory).ToList();
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error getting rides by passenger");
-                return new List<Ride>();
+                return new List<RideHistoryDto>();
             }
         }
 
@@ -463,8 +564,6 @@ namespace api_ride.Services
         {
             try
             {
-
-
                 var cql = @"SELECT geohash, driver_id, latitude, longitude, is_available, rating, updated_at 
                     FROM drivers_by_location 
                     WHERE geohash = ?";
@@ -610,7 +709,100 @@ namespace api_ride.Services
                 return null;
             }
         }
+        public async Task<bool> CancelRideAsync(Guid rideId, string reason)
+        {
+            try
+            {
+                // BƯỚC 1: Lấy dữ liệu cũ để biết đường mà lần
+                // Cần: Status cũ (để xóa trong rides_by_status), DriverId (để giải phóng tài xế), CreatedAt (làm key)
+                var queryGet = "SELECT * FROM rides WHERE ride_id = ?";
+                var row = (await _session.ExecuteAsync((await _session.PrepareAsync(queryGet)).Bind(rideId))).FirstOrDefault();
 
+                if (row == null) return false;
+
+                var ride = MapRowToRide(row); // Tận dụng hàm Map có sẵn
+
+                // Validation logic: Chỉ cho hủy khi chưa hoàn thành
+                if (ride.Status == "completed" || ride.Status == "cancelled")
+                {
+                    _logger.LogWarning("Cannot cancel ride {RideId} with status {Status}", rideId, ride.Status);
+                    return false;
+                }
+
+                var cancelledAt = DateTime.UtcNow;
+
+                // BƯỚC 2: Chuẩn bị BATCH
+                var batch = new BatchStatement();
+
+                // 2.1. Update bảng chính (rides)
+                var cqlMain = "UPDATE rides SET status = 'cancelled', cancelled_at = ?, cancellation_reason = ? WHERE ride_id = ?";
+                var stMain = await _session.PrepareAsync(cqlMain);
+                batch.Add(stMain.Bind(cancelledAt, reason, rideId));
+
+                // 2.2. Update bảng rides_by_passenger
+                var cqlPass = "UPDATE rides_by_passenger SET status = 'cancelled' WHERE passenger_id = ? AND created_at = ? AND ride_id = ?";
+                var stPass = await _session.PrepareAsync(cqlPass);
+                batch.Add(stPass.Bind(ride.PassengerId, ride.CreatedAt, rideId));
+
+                // 2.3. Update bảng rides_by_driver (Nếu đã có tài xế)
+                if (ride.DriverId != null)
+                {
+                    // Update status chuyến đi của tài xế thành cancelled
+                    var cqlDriver = "UPDATE rides_by_driver SET status = 'cancelled' WHERE driver_id = ? AND created_at = ? AND ride_id = ?";
+                    var stDriver = await _session.PrepareAsync(cqlDriver);
+                    batch.Add(stDriver.Bind(ride.DriverId, ride.CreatedAt, rideId));
+
+                    // QUAN TRỌNG: Giải phóng tài xế (Set is_available = true)
+                    // Để nó đi nhận khách khác, không là nó đứng đường đó.
+                    var cqlFreeDriver = "UPDATE drivers SET is_available = true, updated_at = ? WHERE driver_id = ?";
+                    var stFreeDriver = await _session.PrepareAsync(cqlFreeDriver);
+                    batch.Add(stFreeDriver.Bind(DateTime.UtcNow, ride.DriverId));
+
+                    // Cập nhật cả bảng drivers_by_location nữa cho đồng bộ
+                    // (Đoạn này cần geohash hiện tại của tài xế, nếu ko có thì bỏ qua hoặc query thêm, 
+                    // nhưng tạm thời update bảng chính drivers là quan trọng nhất).
+                }
+
+                // 2.4. Xử lý rides_by_status (Xóa cũ - Thêm mới vào cột 'cancelled')
+                // A. Xóa ở trạng thái cũ (VD: đang 'requesting' hoặc 'accepted')
+                var cqlDelStatus = "DELETE FROM rides_by_status WHERE status = ? AND created_at = ? AND ride_id = ?";
+                var stDelStatus = await _session.PrepareAsync(cqlDelStatus);
+                batch.Add(stDelStatus.Bind(ride.Status, ride.CreatedAt, rideId));
+
+                // B. Insert vào trạng thái 'cancelled'
+                var cqlInsStatus = @"
+            INSERT INTO rides_by_status (status, created_at, ride_id, driver_id, passenger_id, total_fare) 
+            VALUES ('cancelled', ?, ?, ?, ?, ?)";
+                var stInsStatus = await _session.PrepareAsync(cqlInsStatus);
+                batch.Add(stInsStatus.Bind(ride.CreatedAt, rideId, ride.DriverId, ride.PassengerId, ride.TotalFare));
+
+                // BƯỚC 3: Thực thi
+                await _session.ExecuteAsync(batch);
+
+                _logger.LogInformation("Ride {RideId} cancelled successfully", rideId);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error canceling ride");
+                return false;
+            }
+        }
+        private RideHistoryDto MapRowToRideHistory(Row row)
+        {
+            return new RideHistoryDto
+            {
+                RideId = row.GetValue<Guid>("ride_id"),
+                // Dùng GetValueSafe nếu sợ null, hoặc GetValue nếu chắc chắn có
+                CreatedAt = row.GetValue<DateTime>("created_at"),
+                PickupAddress = row.GetValue<string>("pickup_address") ?? "",
+                DropoffAddress = row.GetValue<string>("dropoff_address") ?? "",
+                TotalFare = row.GetValue<decimal>("total_fare"),
+                Status = row.GetValue<string>("status") ?? "",
+                VehicleType = row.GetValue<string>("vehicle_type") ?? "",
+                // PaymentMethod = "cash" // Mặc định nếu DB chưa có cột này
+            };
+        }
         private Ride MapRowToRide(Row row)
         {
             return new Ride
@@ -626,8 +818,8 @@ namespace api_ride.Services
                 DropoffLocationLng = row.GetValue<double>("dropoff_location_lng"),
                 DropoffAddress = row.GetValue<string>("dropoff_address") ?? "",
                 VehicleType = row.GetValue<string>("vehicle_type") ?? "",
-                EstimatedDistance = row.GetValue<double>("estimated_distance"),
-                ActualDistance = row.GetValue<double?>("actual_distance"),
+                EstimatedDistance = row.GetValue<decimal>("estimated_distance"),
+                ActualDistance = row.GetValue<decimal?>("actual_distance"),
                 EstimatedDuration = row.GetValue<int>("estimated_duration"),
                 ActualDuration = row.GetValue<int?>("actual_duration"),
                 BaseFare = row.GetValue<decimal>("base_fare"),
@@ -645,9 +837,9 @@ namespace api_ride.Services
                 CompletedAt = row.GetValue<DateTime?>("completed_at"),
                 CancelledAt = row.GetValue<DateTime?>("cancelled_at"),
                 CancellationReason = row.GetValue<string>("cancellation_reason"),
-                DriverRating = row.GetValue<int?>("driver_rating"),
-                PassengerRating = row.GetValue<int?>("passenger_rating"),
-                Notes = row.GetValue<string>("notes")
+                DriverRating = null,
+                PassengerRating = null,
+                Notes = null,
             };
         }
 
