@@ -182,4 +182,33 @@ print('🔻 ĐANG GỌI API CANCEL CHO ID: $rideId');
       return [];
     }
   }
+  Future<RideDetail?> getRideForTracking(String rideId) async {
+    try {
+      final token = await _authService.getAccessToken();
+      
+      // Gọi vào đường dẫn có đuôi /details như Backend đã viết
+      final url = '$baseUrl/$rideId/details'; 
+      print("🔗 Đang gọi API chi tiết (kèm SĐT): $url");
+
+      final response = await http.get(
+        Uri.parse(url),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token'
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final json = jsonDecode(response.body);
+        // Parse JSON sang Model
+        return RideDetail.fromJson(json);
+      } else {
+        print("❌ Lỗi lấy chi tiết ride: ${response.body}");
+        return null;
+      }
+    } catch (e) {
+      print("❌ Exception Tracking: $e");
+      return null;
+    }
+  }
 }

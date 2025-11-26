@@ -1,3 +1,19 @@
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        // Classpath cho Android Gradle Plugin (Kiểm tra version nếu cần)
+        classpath("com.android.tools.build:gradle:8.2.1")
+        
+        // Classpath cho Kotlin (Kiểm tra version nếu cần)
+        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:1.8.22")
+        
+        // 👇 Classpath cho Google Services (Firebase) - QUAN TRỌNG
+        classpath("com.google.gms:google-services:4.4.2")
+    }
+}
 allprojects {
     repositories {
         google()
