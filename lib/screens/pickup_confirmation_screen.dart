@@ -3,6 +3,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../theme/app_theme.dart';
 import 'vehicle_selection_map_screen.dart';
 import 'location_search_screen.dart';
+
 class PickupConfirmationScreen extends StatefulWidget {
   final String pickupAddress;
   final LatLng pickupLatLng;
@@ -151,35 +152,42 @@ class _PickupConfirmationScreenState extends State<PickupConfirmationScreen> {
                             ],
                           ),
                         ),
-IconButton(
-  icon: const Icon(Icons.edit, color: Colors.grey),
-  onPressed: () async {
-    // ✅ Chuyển đến màn hình LocationSearchScreen và truyền điểm đến hiện tại
-    final result = await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => LocationSearchScreen(
-          initialDestination: widget.destinationAddress, // ✅ Truyền điểm đến hiện tại
-        ),
-      ),
-    );
+                        IconButton(
+                          icon: const Icon(Icons.edit, color: Colors.grey),
+                          onPressed: () async {
+                            // ✅ Chuyển đến màn hình LocationSearchScreen để edit điểm đón
+                            final result = await Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => LocationSearchScreen(
+                                  initialPickup: widget.pickupAddress,
+                                  initialDestination: widget.destinationAddress,
+                                  isEditingPickup:
+                                      true, // ✅ Đánh dấu đang edit điểm đón
+                                ),
+                              ),
+                            );
 
-    // ✅ Nếu người dùng chọn điểm đến mới, reload màn hình với dữ liệu mới
-    if (result != null && result is Map<String, dynamic>) {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (context) => PickupConfirmationScreen(
-            pickupAddress: widget.pickupAddress,
-            pickupLatLng: widget.pickupLatLng,
-            destinationAddress: result['address'],
-            destinationLatLng: result['latLng'],
-          ),
-        ),
-      );
-    }
-  },
-),
+                            // ✅ Nếu người dùng chọn điểm đón mới, reload màn hình
+                            if (result != null &&
+                                result is Map<String, dynamic>) {
+                              Navigator.pushReplacement(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) =>
+                                      PickupConfirmationScreen(
+                                        pickupAddress: result['pickupAddress'],
+                                        pickupLatLng: result['pickupLatLng'],
+                                        destinationAddress:
+                                            result['destinationAddress'],
+                                        destinationLatLng:
+                                            result['destinationLatLng'],
+                                      ),
+                                ),
+                              );
+                            }
+                          },
+                        ),
                       ],
                     ),
                     const SizedBox(height: 16),

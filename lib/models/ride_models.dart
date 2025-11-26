@@ -18,7 +18,40 @@ class CalculateFareRequest {
     'vehicleType': vehicleType,
   };
 }
+class RideHistoryItem {
+  final String rideId;
+  final DateTime createdAt;
+  final String pickupAddress;
+  final String dropoffAddress;
+  final double totalFare;
+  final String status;
+  final String vehicleType;
+  final String? paymentMethod;
 
+  RideHistoryItem({
+    required this.rideId,
+    required this.createdAt,
+    required this.pickupAddress,
+    required this.dropoffAddress,
+    required this.totalFare,
+    required this.status,
+    required this.vehicleType,
+    this.paymentMethod,
+  });
+
+  factory RideHistoryItem.fromJson(Map<String, dynamic> json) {
+    return RideHistoryItem(
+      rideId: json['rideId'] ?? '',
+      createdAt: DateTime.parse(json['createdAt']),
+      pickupAddress: json['pickupAddress'] ?? '',
+      dropoffAddress: json['dropoffAddress'] ?? '',
+      totalFare: (json['totalFare'] ?? 0).toDouble(),
+      status: json['status'] ?? 'unknown',
+      vehicleType: json['vehicleType'] ?? 'bike',
+      paymentMethod: json['paymentMethod'],
+    );
+  }
+}
 class LocationDto {
   final double latitude;
   final double longitude;
@@ -316,4 +349,6 @@ class RideDetail {
       createdAt: DateTime.parse(json['createdAt']),
     );
   }
+  
 }
+
