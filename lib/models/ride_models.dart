@@ -88,6 +88,48 @@ class CalculateFareResponse {
   }
 }
 
+class Ride {
+  final String id;
+  late final String status;
+  final String? pickupAddress;
+  final String? dropoffAddress;
+  final double? pickupLat;
+  final double? pickupLng;
+  final double? dropoffLat;
+  final double? dropoffLng;
+  final String passengerName; // Từ API
+  final double distance; // km
+  final double earnings; // VNĐ
+
+  Ride({
+    required this.id,
+    required this.status,
+    this.pickupAddress,
+    this.dropoffAddress,
+    this.pickupLat,
+    this.pickupLng,
+    this.dropoffLat,
+    this.dropoffLng,
+    required this.passengerName,
+    required this.distance,
+    required this.earnings,
+  });
+
+  factory Ride.fromJson(Map<String, dynamic> json) {
+    return Ride(
+      id: json['rideId'] ?? json['id'] ?? '',
+      status: json['status'] ?? '',
+      pickupAddress: json['pickupAddress'],
+      dropoffAddress: json['dropoffAddress'],
+      pickupLat: (json['pickupLocationLat'] as num?)?.toDouble(),
+      pickupLng: (json['pickupLocationLng'] as num?)?.toDouble(),
+      passengerName: json['passengerName'] ?? 'Khách hàng',
+      distance: (json['estimatedDistance'] as num?)?.toDouble() ?? 0.0,
+      earnings: (json['totalFare'] as num?)?.toDouble() ?? 0.0,
+    );
+  }
+}
+
 class VehicleOption {
   final String vehicleType;
   final String displayName;
@@ -123,7 +165,7 @@ class CreateRideRequest {
   final String vehicleType;
   final String paymentMethod;
   final String? promoCode;
-final double distance;
+  final double distance;
   CreateRideRequest({
     required this.pickupLocation,
     required this.destinationLocation,
@@ -149,14 +191,13 @@ class CreateRideResponse {
   final double totalFare;
   final int estimatedArrival;
   final DriverInfo? assignedDriver;
-  
+
   CreateRideResponse({
     required this.rideId,
     required this.status,
     required this.totalFare,
     required this.estimatedArrival,
     this.assignedDriver,
- 
   });
 
   factory CreateRideResponse.fromJson(Map<String, dynamic> json) {

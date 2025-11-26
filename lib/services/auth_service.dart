@@ -3,10 +3,12 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/auth_models.dart';
 import '../config/config.dart';
+
 class AuthService {
   // Đổi URL này thành URL backend của bạn
   // static const String baseUrl = 'http://10.0.2.2:5267/api/Auth'; //đường link dành cho máy ảo Android
-  static const String baseUrl = '${AppConfig.baseUrl}/api/Auth'; //link dành cho máy thật sử dụng máy thật mới lấy được vị trí hiện tại chính xác
+  static const String baseUrl =
+      '${AppConfig.baseUrl}/api/Auth'; //link dành cho máy thật sử dụng máy thật mới lấy được vị trí hiện tại chính xác
   String? _token;
   String? _refreshToken;
   UserDto? _currentUser;
