@@ -1,10 +1,18 @@
-﻿using api_ride.Models.DTOs;
+﻿using api_ride.Models;
+using api_ride.Models.DTOs;
 
 namespace api_ride.Services
 {
     public class FareCalculationService
     {
-        
+        private readonly ICassandraService _cassandraService;
+
+        // Inject CassandraService để tra cứu mã KM
+        public FareCalculationService(ICassandraService cassandraService)
+        {
+            _cassandraService = cassandraService;
+        }
+
         private readonly Dictionary<string, FareRate> _fareRates = new()
         {
             { "bike", new FareRate 
@@ -33,63 +41,78 @@ namespace api_ride.Services
             }
         };
 
-        public CalculateFareResponse CalculateFare(CalculateFareRequest request)
+        public async Task<CalculateFareResponse> CalculateFareAsync(CalculateFareRequest request, Guid userId)
         {
             var rideId = Guid.NewGuid().ToString();
             var vehicleType = request.VehicleType.ToLower();
 
-            if (!_fareRates.ContainsKey(vehicleType))
-            {
-                throw new ArgumentException($"Invalid vehicle type: {vehicleType}");
-            }
+            if (!_fareRates.ContainsKey(vehicleType)) throw new ArgumentException($"Invalid vehicle type: {vehicleType}");
 
             var rate = _fareRates[vehicleType];
 
-            // Chuyển sang decimal để tính tiền cho chuẩn
+            // 1. Tính giá gốc
             decimal distance = (decimal)request.Distance;
+            int estimatedDuration = request.Duration > 0 ? request.Duration : (int)(distance / 30m * 60m);
 
-            // Ước tính thời gian (giả sử tốc độ 30km/h)
-            // Nếu request có gửi duration lên thì nên dùng cái đó: request.Duration
-            int estimatedDuration = (int)(distance / 30m * 60m);
-
-            // Tính giá cơ bản
             decimal baseFare = (decimal)rate.BaseFare;
             decimal distanceFare = distance * (decimal)rate.PerKm;
             decimal timeFare = estimatedDuration * (decimal)rate.PerMinute;
 
-            // Surge pricing
             decimal surgeMultiplier = (decimal)GetSurgeMultiplier();
             decimal surgeFare = (baseFare + distanceFare + timeFare) * (surgeMultiplier - 1);
 
-            // Tổng
             decimal subtotal = baseFare + distanceFare + timeFare + surgeFare;
+            if (subtotal < (decimal)rate.MinFare) subtotal = (decimal)rate.MinFare;
 
-            // Giá tối thiểu
-            if (subtotal < (decimal)rate.MinFare)
+            // 2. Xử lý MÃ GIẢM GIÁ
+            decimal discount = 0;
+            Promotion? activePromo = null;
+            bool userAlreadyUsed = false;
+
+            if (!string.IsNullOrEmpty(request.PromoCode))
             {
-                subtotal = (decimal)rate.MinFare;
+                // Gọi DB check mã
+                activePromo = await _cassandraService.GetPromotionByCodeAsync(request.PromoCode);
+
+                if (activePromo != null)
+                {
+                    // Check user dùng chưa
+                    userAlreadyUsed = await _cassandraService.CheckUserUsedPromoAsync(userId, request.PromoCode);
+
+                    // Tính tiền giảm
+                    var promoResult = CalculatePromoDiscount(activePromo, subtotal, userAlreadyUsed);
+                    if (promoResult.IsValid)
+                    {
+                        discount = promoResult.DiscountAmount;
+                    }
+                }
             }
 
-            decimal discount = 0.0m;
             decimal totalFare = Math.Round(subtotal - discount, 0);
+            if (totalFare < 0) totalFare = 0;
 
-            // Tính list xe (AvailableVehicles)
+            // 3. Tính list xe (AvailableVehicles) và áp dụng mã cho từng loại xe
             var availableVehicles = _fareRates.Select(kvp =>
             {
                 var vRate = kvp.Value;
-                decimal vSubtotal = (decimal)vRate.BaseFare +
-                                   (distance * (decimal)vRate.PerKm) +
-                                   (estimatedDuration * (decimal)vRate.PerMinute);
-
+                decimal vSubtotal = (decimal)vRate.BaseFare + (distance * (decimal)vRate.PerKm) + (estimatedDuration * (decimal)vRate.PerMinute);
                 vSubtotal *= surgeMultiplier;
                 vSubtotal = Math.Max(vSubtotal, (decimal)vRate.MinFare);
+
+                // Tính discount cho từng loại xe (vì điều kiện MinOrderValue có thể khác nhau)
+                decimal vDiscount = 0;
+                if (activePromo != null)
+                {
+                    var vResult = CalculatePromoDiscount(activePromo, vSubtotal, userAlreadyUsed);
+                    if (vResult.IsValid) vDiscount = vResult.DiscountAmount;
+                }
 
                 return new VehicleOption
                 {
                     VehicleType = kvp.Key,
-                    DisplayName = GetDisplayName(kvp.Key), // Coi chừng lỗi font tiếng Việt ở đây
-                    BaseFare = vRate.BaseFare, // Model trả về double thì ép kiểu lại
-                    TotalFare = (double)Math.Round(vSubtotal, 0),
+                    DisplayName = GetDisplayName(kvp.Key),
+                    BaseFare = vRate.BaseFare,
+                    TotalFare = (double)Math.Round(vSubtotal - vDiscount, 0),
                     EstimatedArrival = new Random().Next(3, 10),
                     IconUrl = $"/assets/vehicles/{kvp.Key}.png"
                 };
@@ -103,11 +126,36 @@ namespace api_ride.Services
                 BaseFare = (double)baseFare,
                 DistanceFare = (double)distanceFare,
                 TimeFare = (double)timeFare,
-                SurgeFare = (double)surgeFare, // Sẽ hết bị lỗi 4800.000001
-                Discount = (double)discount,
-                TotalFare = (double)totalFare,
+                SurgeFare = (double)surgeFare,
+                Discount = (double)discount, // Trả về số tiền được giảm
+                TotalFare = (double)totalFare, // Giá sau khi giảm
                 AvailableVehicles = availableVehicles
             };
+        }
+        // Helper: Logic tính tiền giảm
+        private PromoResult CalculatePromoDiscount(Promotion promo, decimal originalFare, bool userHasUsed)
+        {
+            var now = DateTime.UtcNow;
+            if (promo.Status != "active" || now < promo.ValidFrom || now > promo.ValidTo)
+                return new PromoResult { IsValid = false };
+
+            if (promo.UsedCount >= promo.UsageLimit) return new PromoResult { IsValid = false };
+            if (userHasUsed) return new PromoResult { IsValid = false };
+            if (originalFare < promo.MinOrderValue) return new PromoResult { IsValid = false };
+
+            decimal discount = 0;
+            if (promo.DiscountType == "percentage")
+            {
+                discount = originalFare * (promo.DiscountValue / 100);
+                if (discount > promo.MaxDiscount) discount = promo.MaxDiscount;
+            }
+            else // fixed
+            {
+                discount = promo.DiscountValue;
+            }
+
+            if (discount > originalFare) discount = originalFare;
+            return new PromoResult { IsValid = true, DiscountAmount = discount };
         }
         // Surge pricing logic (gi? cao ?i?m)
         private double GetSurgeMultiplier()
@@ -140,6 +188,11 @@ namespace api_ride.Services
                 "business" => "Xe 7 chổ",
                 _ => vehicleType
             };
+        }
+        private class PromoResult
+        {
+            public bool IsValid { get; set; }
+            public decimal DiscountAmount { get; set; }
         }
     }
 

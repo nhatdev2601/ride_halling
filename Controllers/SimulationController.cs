@@ -86,7 +86,7 @@ namespace api_ride.Controllers
 
                 if (ride == null)
                 {
-                    Console.WriteLine("❌ Không tìm thấy ride trong DB");
+                    Console.WriteLine(" Không tìm thấy ride trong DB");
                     return NotFound("Ride not found");
                 }
 
@@ -120,7 +120,7 @@ namespace api_ride.Controllers
             }
             catch (Exception ex)
             {
-                Console.WriteLine("❌ Lỗi Simulation: " + ex.Message);
+                Console.WriteLine(" Lỗi Simulation: " + ex.Message);
                 return BadRequest(ex.Message);
             }
         }

@@ -41,6 +41,12 @@ namespace api_ride.Services
         Task<Vehicle?> GetVehicleByDriverIdAsync(Guid driverId);
         //query để giải lập tài xế
         Task ExecuteAsync(string query, object[] args);
+        // Promotion operations
+        Task<Promotion?> GetPromotionByCodeAsync(string code);
+        Task<bool> CheckUserUsedPromoAsync(Guid userId, string promoCode);
+        Task<bool> IncrementPromoUsageAsync(string promoCode);
+        Task<bool> SaveUserPromoUsageAsync(Guid userId, string promoCode, Guid rideId, decimal discountAmount);
+        Task<List<Promotion>> GetActivePromotionsAsync(); // Để hiển thị list lên màn hình home
     }
 
     public class CassandraService : ICassandraService, IDisposable
@@ -857,6 +863,131 @@ namespace api_ride.Services
             {
                 _logger.LogError(ex, "Lỗi lấy thông tin tài xế kèm SĐT");
                 return null;
+            }
+        }
+        // --- PROMOTION REGION ---
+
+        public async Task<Promotion?> GetPromotionByCodeAsync(string code)
+        {
+            try
+            {
+                var cql = "SELECT * FROM promotions WHERE promo_code = ?";
+                var row = (await _session.ExecuteAsync((await _session.PrepareAsync(cql)).Bind(code))).FirstOrDefault();
+                if (row == null) return null;
+
+                return new Promotion
+                {
+                    PromoCode = row.GetValue<string>("promo_code"),
+                    Description = row.GetValue<string>("description"),
+                    DiscountType = row.GetValue<string>("discount_type"),
+                    DiscountValue = row.GetValue<decimal>("discount_value"),
+                    MaxDiscount = row.GetValue<decimal>("max_discount"),
+                    MinOrderValue = row.GetValue<decimal>("min_order_value"),
+                    Status = row.GetValue<string>("status"),
+                    UsageLimit = row.GetValue<int>("usage_limit"),
+                    UsedCount = row.GetValue<int>("used_count"),
+                    ValidFrom = row.GetValue<DateTime>("valid_from"),
+                    ValidTo = row.GetValue<DateTime>("valid_to")
+                };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Lỗi lấy promotion code");
+                return null;
+            }
+        }
+
+        public async Task<bool> CheckUserUsedPromoAsync(Guid userId, string promoCode)
+        {
+            // Kiểm tra xem user này đã xài mã này chưa
+            // Lưu ý: Bảng user_promotions khóa chính là (user_id, promo_code, used_at)
+            // Nên ta query theo user_id và promo_code là đủ.
+            try
+            {
+                var cql = "SELECT * FROM user_promotions WHERE user_id = ? AND promo_code = ?";
+                var rs = await _session.ExecuteAsync((await _session.PrepareAsync(cql)).Bind(userId, promoCode));
+                return rs.Any(); // Nếu có dòng nào trả về tức là đã dùng rồi
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        public async Task<List<Promotion>> GetActivePromotionsAsync()
+        {
+            // Hàm này lấy list khuyến mãi để hiện lên App
+            // Vì Cassandra không giỏi filter range query phức tạp, ta lấy hết status='active' rồi lọc date ở code C#
+            // *Lưu ý: Mày cần tạo Index cho cột status nếu chưa có: CREATE INDEX ON promotions(status);
+            try
+            {
+                var cql = "SELECT * FROM promotions WHERE status = 'active' ALLOW FILTERING";
+                var rs = await _session.ExecuteAsync(new SimpleStatement(cql));
+                var now = DateTime.UtcNow;
+
+                var list = new List<Promotion>();
+                foreach (var row in rs)
+                {
+                    var p = new Promotion
+                    {
+                        PromoCode = row.GetValue<string>("promo_code"),
+                        Description = row.GetValue<string>("description"),
+                        DiscountType = row.GetValue<string>("discount_type"),
+                        DiscountValue = row.GetValue<decimal>("discount_value"),
+                        MaxDiscount = row.GetValue<decimal>("max_discount"),
+                        MinOrderValue = row.GetValue<decimal>("min_order_value"),
+                        ValidFrom = row.GetValue<DateTime>("valid_from"),
+                        ValidTo = row.GetValue<DateTime>("valid_to")
+                    };
+
+                    // Lọc những mã còn hạn sử dụng
+                    if (p.ValidFrom <= now && p.ValidTo >= now)
+                    {
+                        list.Add(p);
+                    }
+                }
+                return list;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Lỗi lấy danh sách khuyến mãi");
+                return new List<Promotion>();
+            }
+        }
+
+        public async Task<bool> IncrementPromoUsageAsync(string promoCode)
+        {
+            // Tăng biến đếm số lần sử dụng mã (để sau này khóa lại nếu hết lượt)
+            // Lưu ý: Cassandra không atomic 100% như SQL transaction, nhưng dùng Counter hoặc Lightweight Transaction (LWT)
+            // Ở đây tao dùng LWT update đơn giản.
+            try
+            {
+                // Lấy số count hiện tại (code đơn giản, thực tế nên dùng Counter table)
+                var promo = await GetPromotionByCodeAsync(promoCode);
+                if (promo == null) return false;
+
+                var cql = "UPDATE promotions SET used_count = ? WHERE promo_code = ?";
+                await _session.ExecuteAsync((await _session.PrepareAsync(cql)).Bind(promo.UsedCount + 1, promoCode));
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        public async Task<bool> SaveUserPromoUsageAsync(Guid userId, string promoCode, Guid rideId, decimal discountAmount)
+        {
+            try
+            {
+                var cql = "INSERT INTO user_promotions (user_id, promo_code, used_at, ride_id, discount_amount) VALUES (?, ?, ?, ?, ?)";
+                await _session.ExecuteAsync((await _session.PrepareAsync(cql))
+                    .Bind(userId, promoCode, DateTime.UtcNow, rideId, discountAmount));
+                return true;
+            }
+            catch
+            {
+                return false;
             }
         }
         private RideHistoryDto MapRowToRideHistory(Row row)

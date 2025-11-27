@@ -35,22 +35,22 @@ namespace api_ride.Controllers
 
         [HttpPost("calculate-fare")]
         [AllowAnonymous]
-        public ActionResult<CalculateFareResponse> CalculateFare([FromBody] CalculateFareRequest request)
+        public async Task<ActionResult<CalculateFareResponse>> CalculateFare([FromBody] CalculateFareRequest request)
         {
             try
             {
-                _logger.LogInformation("📥 Calculating fare for {VehicleType} from {Pickup} to {Destination}", 
-                    request.VehicleType, request.PickupLocation.Address, request.DestinationLocation.Address);
+                // Lấy User ID để check xem user dùng mã chưa
+                var userIdString = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                Guid userId = Guid.Empty;
+                if (!string.IsNullOrEmpty(userIdString)) Guid.TryParse(userIdString, out userId);
 
-                var result = _fareService.CalculateFare(request);
-
-                _logger.LogInformation("💰 Total fare calculated: {TotalFare:N0} VNĐ", result.TotalFare);
+                // Gọi hàm Async mới
+                var result = await _fareService.CalculateFareAsync(request, userId);
 
                 return Ok(result);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error calculating fare");
                 return BadRequest(new { error = ex.Message });
             }
         }
@@ -60,54 +60,40 @@ namespace api_ride.Controllers
         {
             try
             {
-                var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-                if (string.IsNullOrEmpty(userId))
-                {
-                    return Unauthorized(new { error = "User not authenticated" });
-                }
+                var userIdString = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                if (string.IsNullOrEmpty(userIdString)) return Unauthorized();
+                Guid.TryParse(userIdString, out var userId);
 
-                _logger.LogInformation("🚗 User {UserId} is booking a ride", userId);
-
-                if (request.PickupLocation == null || request.DestinationLocation == null)
-                {
-                    return BadRequest(new { error = "Pickup and destination locations are required" });
-                }
-
-                if (string.IsNullOrEmpty(request.VehicleType))
-                {
-                    return BadRequest(new { error = "Vehicle type is required" });
-                }
-
-                var distance = request.Distance;
-                
-                if (distance <= 0)
-                {
-                    return BadRequest(new { error = "loi khong co khoang cach" });
-                }
-
+                // Tính lại giá lần cuối để chốt đơn (tránh hack giá ở client)
                 var fareRequest = new CalculateFareRequest
                 {
                     PickupLocation = request.PickupLocation,
                     DestinationLocation = request.DestinationLocation,
                     VehicleType = request.VehicleType,
-                    Distance = distance
+                    Distance = request.Distance,
+                    PromoCode = request.PromoCode // 👇 Truyền mã vào để tính giảm giá
                 };
 
-                var fareInfo = _fareService.CalculateFare(fareRequest);
-                var rideId = await _rideRepository.CreateRideAsync(request, userId, fareInfo);
+                var fareInfo = await _fareService.CalculateFareAsync(fareRequest, userId);
 
-                _logger.LogInformation("✅ Created ride: {RideId}", rideId);
+                // Tạo chuyến đi
+                var rideId = await _rideRepository.CreateRideAsync(request, userIdString, fareInfo);
 
+                // 👇 QUAN TRỌNG: Nếu có giảm giá, lưu vào DB là user này đã dùng mã
+                if (!string.IsNullOrEmpty(request.PromoCode) && fareInfo.Discount > 0)
+                {
+                    await _cassandraService.SaveUserPromoUsageAsync(userId, request.PromoCode, Guid.Parse(rideId), (decimal)fareInfo.Discount);
+                    await _cassandraService.IncrementPromoUsageAsync(request.PromoCode);
+                }
+
+                // Tìm tài xế (Mock)
                 var driver = await _driverService.FindNearestDriverAsync(
-                    request.PickupLocation.Latitude,
-                    request.PickupLocation.Longitude,
-                    request.VehicleType
+                    request.PickupLocation.Latitude, request.PickupLocation.Longitude, request.VehicleType
                 );
 
                 if (driver != null)
                 {
                     await _rideRepository.UpdateRideStatusAsync(rideId, "accepted", driver.DriverId);
-                    _logger.LogInformation("👨‍✈️ Assigned driver: {DriverName}", driver.FullName);
                 }
 
                 return Ok(new CreateRideResponse
@@ -121,7 +107,6 @@ namespace api_ride.Controllers
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error booking ride");
                 return BadRequest(new { error = ex.Message });
             }
         }
@@ -161,7 +146,7 @@ namespace api_ride.Controllers
             }
         }
 
-        [HttpGet]
+
         [HttpGet]
         public async Task<ActionResult<List<RideHistoryDto>>> GetUserRides()
         {

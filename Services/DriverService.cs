@@ -80,7 +80,7 @@ namespace api_ride.Services
                     var user = await _cassandraService.GetUserByIdAsync(driverInfo.UserId);
                     if (user == null || user.Status != "active") continue;
 
-                    // ✅ TÌM THẤY RỒI! TRẢ VỀ NGAY
+                    //  TÌM THẤY RỒI! TRẢ VỀ NGAY
                     return new DriverInfo
                     {
                         DriverId = driverInfo.DriverId.ToString(),
@@ -255,12 +255,12 @@ namespace api_ride.Services
             var timeInHours = distance / speed;
             var timeInMinutes = (int)Math.Ceiling(timeInHours * 60);
             
-            return Math.Max(timeInMinutes, 2); // Minimum 2 minutes
+            return Math.Max(timeInMinutes, 2); 
         }
 
         private double CalculateDistance(double lat1, double lon1, double lat2, double lon2)
         {
-            const double R = 6371; // Earth's radius in kilometers
+            const double R = 6371; 
             var dLat = ToRadians(lat2 - lat1);
             var dLon = ToRadians(lon2 - lon1);
             
@@ -269,7 +269,7 @@ namespace api_ride.Services
                    Math.Sin(dLon / 2) * Math.Sin(dLon / 2);
             
             var c = 2 * Math.Atan2(Math.Sqrt(a), Math.Sqrt(1 - a));
-            return R * c; // Distance in kilometers
+            return R * c; 
         }
 
         private double ToRadians(double degrees)

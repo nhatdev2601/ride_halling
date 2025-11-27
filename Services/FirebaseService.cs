@@ -29,23 +29,23 @@ namespace api_ride.Services
         {
             try
             {
-                Console.WriteLine($"🔥 [Firebase] Đang update path: {path}");
+                Console.WriteLine($" [Firebase] Đang update path: {path}");
                 FirebaseResponse response = await _client.UpdateAsync(path, data);
 
                 if (response.StatusCode == HttpStatusCode.OK)
                 {
-                    Console.WriteLine($"✅ [Firebase] Update thành công: {path}");
+                    Console.WriteLine($" [Firebase] Update thành công: {path}");
                     return true;
                 }
                 else
                 {
-                    Console.WriteLine($"❌ [Firebase] Lỗi: {response.StatusCode} - {response.Body}");
+                    Console.WriteLine($" [Firebase] Lỗi: {response.StatusCode} - {response.Body}");
                     return false;
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"❌❌❌ [Firebase] Exception: {ex.Message}");
+                Console.WriteLine($" [Firebase] Exception: {ex.Message}");
                 return false;
             }
         }
@@ -59,7 +59,7 @@ namespace api_ride.Services
             }
             catch (Exception ex)
             {
-                Console.WriteLine("❌ Lỗi Test Connection: " + ex.Message);
+                Console.WriteLine(" Lỗi Test Connection: " + ex.Message);
                 throw;
             }
         }

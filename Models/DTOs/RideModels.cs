@@ -1,4 +1,4 @@
-using System.ComponentModel.DataAnnotations;
+﻿using System.ComponentModel.DataAnnotations;
 
 namespace api_ride.Models.DTOs
 {
@@ -9,6 +9,10 @@ namespace api_ride.Models.DTOs
         public Location DestinationLocation { get; set; } = new Location();
         public double Distance { get; set; } // km
         public string VehicleType { get; set; } = string.Empty; // "bike", "car", "business"
+        public int Duration { get; set; } // Thêm cái này để tính tiền thời gian chính xác hơn
+
+        // 👇 THÊM DÒNG NÀY
+        public string PromoCode { get; set; } = string.Empty;
     }
 
     public class Location
