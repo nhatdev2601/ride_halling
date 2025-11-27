@@ -1,32 +1,53 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
-import '../services/auth_service.dart'; // ✅ Thêm import AuthService
+import '../services/auth_service.dart'; //  Thêm import AuthService
 import 'home_screen.dart';
 import 'trip_history_screen.dart';
 import 'payment_screen.dart';
-import 'login_screen.dart'; // ✅ Thêm import LoginScreen
+import 'login_screen.dart'; //  Thêm import LoginScreen
 
 class MainScreen extends StatefulWidget {
-  const MainScreen({super.key});
+  final int initialIndex; //  Thêm tham số để chọn tab ban đầu
+
+  const MainScreen({super.key, this.initialIndex = 0});
 
   @override
   State<MainScreen> createState() => _MainScreenState();
 }
 
 class _MainScreenState extends State<MainScreen> {
-  int _currentIndex = 0;
+  late int _currentIndex;
+  late final List<Widget>
+  _screens; //  Cached screens để tránh rebuild không cần thiết
 
-  final List<Widget> _screens = [
-    const HomeScreen(),
-    const TripHistoryScreen(),
-    const PaymentScreen(),
-    const ProfileScreen(),
-  ];
+  @override
+  void initState() {
+    super.initState();
+    _currentIndex = widget.initialIndex; //  Khởi tạo tab từ tham số truyền vào
+    print(' MainScreen khởi tạo với tab index: $_currentIndex');
+
+    //  Khởi tạo danh sách screens một lần
+    _screens = [
+      const HomeScreen(),
+      const TripHistoryScreen(
+        showBackButton: false,
+      ), //  Không hiển thị nút back trong tab
+      const PaymentScreen(
+        showBackButton: false,
+      ), //  Không hiển thị nút back trong tab
+      const ProfileScreen(),
+    ];
+  }
+
+  Widget _getScreen(int index) {
+    print(' _getScreen được gọi với index: $index');
+    return _screens[index];
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: _screens[_currentIndex],
+      body: _getScreen(_currentIndex),
       bottomNavigationBar: BottomNavigationBar(
         type: BottomNavigationBarType.fixed,
         currentIndex: _currentIndex,
@@ -61,12 +82,12 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
-  final AuthService _authService = AuthService(); // ✅ Thêm AuthService
-  bool _isLoading = false; // ✅ Thêm loading state
+  final AuthService _authService = AuthService(); //  Thêm AuthService
+  bool _isLoading = false; //  Thêm loading state
 
   @override
   Widget build(BuildContext context) {
-    final user = _authService.currentUser; // ✅ Lấy thông tin user
+    final user = _authService.currentUser; //  Lấy thông tin user
 
     return Scaffold(
       backgroundColor: AppTheme.lightGrey,
@@ -94,7 +115,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     backgroundColor: AppTheme.primaryGreen.withOpacity(0.1),
                     child: Text(
                       user?.fullName.substring(0, 2).toUpperCase() ??
-                          'NV', // ✅ Lấy từ user
+                          'NV', //  Lấy từ user
                       style: const TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.bold,
@@ -223,7 +244,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               child: OutlinedButton(
                 onPressed: _isLoading
                     ? null
-                    : () => _showLogoutDialog(context), // ✅ Disable khi loading
+                    : () => _showLogoutDialog(context), //  Disable khi loading
                 style: OutlinedButton.styleFrom(
                   foregroundColor: AppTheme.error,
                   side: const BorderSide(color: AppTheme.error),
@@ -233,7 +254,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                 ),
                 child:
-                    _isLoading // ✅ Hiển thị loading khi đang logout
+                    _isLoading //  Hiển thị loading khi đang logout
                     ? const SizedBox(
                         height: 20,
                         width: 20,
@@ -309,8 +330,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
           ElevatedButton(
             onPressed: () async {
-              Navigator.pop(context); // ✅ Đóng dialog
-              await _handleLogout(); // ✅ Gọi hàm logout
+              Navigator.pop(context); //  Đóng dialog
+              await _handleLogout(); //  Gọi hàm logout
             },
             style: ElevatedButton.styleFrom(backgroundColor: AppTheme.error),
             child: const Text('Đăng xuất'),
@@ -320,24 +341,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  // ✅ Hàm xử lý logout
+  //  Hàm xử lý logout
   Future<void> _handleLogout() async {
     setState(() => _isLoading = true);
 
     try {
-      // ✅ Gọi API logout
+      //  Gọi API logout
       await _authService.logout();
 
       if (!mounted) return;
 
-      // ✅ Chuyển về màn hình login và xóa toàn bộ stack
+      //  Chuyển về màn hình login và xóa toàn bộ stack
       Navigator.pushAndRemoveUntil(
         context,
         MaterialPageRoute(builder: (context) => const LoginScreen()),
         (route) => false,
       );
 
-      // ✅ Hiển thị thông báo thành công
+      //  Hiển thị thông báo thành công
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Đăng xuất thành công'),
@@ -349,7 +370,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
       setState(() => _isLoading = false);
 
-      // ✅ Hiển thị lỗi
+      //  Hiển thị lỗi
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Lỗi đăng xuất: $e'),

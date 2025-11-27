@@ -3,7 +3,9 @@ import '../theme/app_theme.dart';
 import '../models/models.dart';
 
 class PaymentScreen extends StatefulWidget {
-  const PaymentScreen({super.key});
+  final bool showBackButton; //  Thêm tham số để kiểm soát nút back
+
+  const PaymentScreen({super.key, this.showBackButton = false});
 
   @override
   State<PaymentScreen> createState() => _PaymentScreenState();
@@ -22,7 +24,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
     ),
     PaymentOption(
       method: PaymentMethod.wallet,
-      title: 'Ví RideApp',
+      title: 'Ví VN Pay',
       subtitle: 'Số dư: 250,000đ',
       icon: Icons.account_balance_wallet,
       isEnabled: true,
@@ -50,10 +52,15 @@ class _PaymentScreenState extends State<PaymentScreen> {
       appBar: AppBar(
         backgroundColor: AppTheme.white,
         elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: AppTheme.black),
-          onPressed: () => Navigator.pop(context),
-        ),
+        //  Chỉ hiển thị nút back khi showBackButton = true
+        leading: widget.showBackButton
+            ? IconButton(
+                icon: const Icon(Icons.arrow_back, color: AppTheme.black),
+                onPressed: () => Navigator.pop(context),
+              )
+            : null,
+        automaticallyImplyLeading:
+            widget.showBackButton, //  Tắt auto back button
         title: const Text(
           'Phương thức thanh toán',
           style: TextStyle(color: AppTheme.black, fontWeight: FontWeight.bold),

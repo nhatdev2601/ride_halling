@@ -5,7 +5,9 @@ import '../services/ride_service.dart';
 import '../models/ride_models.dart'; // Model RideHistoryItem
 
 class TripHistoryScreen extends StatefulWidget {
-  const TripHistoryScreen({super.key});
+  final bool showBackButton; //  Thêm tham số để kiểm soát nút back
+
+  const TripHistoryScreen({super.key, this.showBackButton = false});
 
   @override
   State<TripHistoryScreen> createState() => _TripHistoryScreenState();
@@ -18,6 +20,9 @@ class _TripHistoryScreenState extends State<TripHistoryScreen> {
   @override
   void initState() {
     super.initState();
+    print(
+      ' TripHistoryScreen initState - showBackButton: ${widget.showBackButton}',
+    );
     _loadHistory();
   }
 
@@ -30,12 +35,13 @@ class _TripHistoryScreenState extends State<TripHistoryScreen> {
   // --- HELPERS ---
   String _formatDate(DateTime date) {
     final now = DateTime.now();
-    final localDate = date.toLocal(); 
+    final localDate = date.toLocal();
     final diff = now.difference(localDate);
 
     if (diff.inDays == 0 && localDate.day == now.day) {
       return 'Hôm nay, ${DateFormat('HH:mm').format(localDate)}';
-    } else if (diff.inDays == 1 || (diff.inDays == 0 && localDate.day != now.day)) {
+    } else if (diff.inDays == 1 ||
+        (diff.inDays == 0 && localDate.day != now.day)) {
       return 'Hôm qua, ${DateFormat('HH:mm').format(localDate)}';
     } else {
       return DateFormat('dd/MM/yyyy • HH:mm').format(localDate);
@@ -48,22 +54,33 @@ class _TripHistoryScreenState extends State<TripHistoryScreen> {
 
   Color _getStatusColor(String status) {
     switch (status.toLowerCase()) {
-      case 'completed': return AppTheme.success;
-      case 'cancelled': return AppTheme.error;
-      case 'in_progress': return Colors.blue;
-      case 'accepted': return Colors.orange;
-      default: return Colors.grey;
+      case 'completed':
+        return AppTheme.success;
+      case 'cancelled':
+        return AppTheme.error;
+      case 'in_progress':
+        return Colors.blue;
+      case 'accepted':
+        return Colors.orange;
+      default:
+        return Colors.grey;
     }
   }
 
   String _getStatusText(String status) {
     switch (status.toLowerCase()) {
-      case 'completed': return 'Hoàn thành';
-      case 'cancelled': return 'Đã hủy';
-      case 'in_progress': return 'Đang đi';
-      case 'accepted': return 'Tài xế nhận';
-      case 'requesting': return 'Đang tìm xe';
-      default: return status;
+      case 'completed':
+        return 'Hoàn thành';
+      case 'cancelled':
+        return 'Đã hủy';
+      case 'in_progress':
+        return 'Đang đi';
+      case 'accepted':
+        return 'Tài xế nhận';
+      case 'requesting':
+        return 'Đang tìm xe';
+      default:
+        return status;
     }
   }
 
@@ -88,31 +105,39 @@ class _TripHistoryScreenState extends State<TripHistoryScreen> {
 
   @override
   Widget build(BuildContext context) {
+    print(' TripHistoryScreen build được gọi');
     return Scaffold(
       backgroundColor: AppTheme.lightGrey,
       appBar: AppBar(
         backgroundColor: AppTheme.white,
         elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: AppTheme.black),
-          onPressed: () => Navigator.pop(context),
-        ),
+        //  Chỉ hiển thị nút back khi showBackButton = true
+        leading: widget.showBackButton
+            ? IconButton(
+                icon: const Icon(Icons.arrow_back, color: AppTheme.black),
+                onPressed: () => Navigator.pop(context),
+              )
+            : null,
+        automaticallyImplyLeading:
+            widget.showBackButton, //  Tắt auto back button
         title: const Text(
           'Lịch sử chuyến đi',
           style: TextStyle(color: AppTheme.black, fontWeight: FontWeight.bold),
         ),
         centerTitle: true,
       ),
-      
-      // 👇 DÙNG FUTURE BUILDER ĐỂ LOAD API
+
+      //  DÙNG FUTURE BUILDER ĐỂ LOAD API
       body: FutureBuilder<List<RideHistoryItem>>(
         future: _historyFuture,
         builder: (context, snapshot) {
           // 1. Đang tải
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator(color: AppTheme.primaryGreen));
+            return const Center(
+              child: CircularProgressIndicator(color: AppTheme.primaryGreen),
+            );
           }
-          
+
           // 2. Có lỗi
           if (snapshot.hasError) {
             return Center(child: Text("Lỗi tải dữ liệu: ${snapshot.error}"));
@@ -128,7 +153,10 @@ class _TripHistoryScreenState extends State<TripHistoryScreen> {
                 children: [
                   Icon(Icons.history, size: 60, color: Colors.grey),
                   SizedBox(height: 16),
-                  Text("Bạn chưa có chuyến đi nào", style: TextStyle(color: Colors.grey)),
+                  Text(
+                    "Bạn chưa có chuyến đi nào",
+                    style: TextStyle(color: Colors.grey),
+                  ),
                 ],
               ),
             );
@@ -160,7 +188,11 @@ class _TripHistoryScreenState extends State<TripHistoryScreen> {
         color: AppTheme.white,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8, offset: const Offset(0, 2)),
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
         ],
       ),
       child: Material(
@@ -181,10 +213,17 @@ class _TripHistoryScreenState extends State<TripHistoryScreen> {
                   children: [
                     Text(
                       _formatDate(trip.createdAt),
-                      style: const TextStyle(fontSize: 14, color: AppTheme.grey, fontWeight: FontWeight.w500),
+                      style: const TextStyle(
+                        fontSize: 14,
+                        color: AppTheme.grey,
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
                       decoration: BoxDecoration(
                         color: _getStatusColor(trip.status).withOpacity(0.1),
                         borderRadius: BorderRadius.circular(4),
@@ -206,12 +245,17 @@ class _TripHistoryScreenState extends State<TripHistoryScreen> {
                 Row(
                   children: [
                     Container(
-                      width: 40, height: 40,
+                      width: 40,
+                      height: 40,
                       decoration: BoxDecoration(
                         color: AppTheme.primaryGreen.withOpacity(0.1),
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      child: Icon(_getVehicleIcon(trip.vehicleType), color: AppTheme.primaryGreen, size: 20),
+                      child: Icon(
+                        _getVehicleIcon(trip.vehicleType),
+                        color: AppTheme.primaryGreen,
+                        size: 20,
+                      ),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
@@ -219,18 +263,50 @@ class _TripHistoryScreenState extends State<TripHistoryScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           // Pickup
-                          Row(children: [
-                            const Icon(Icons.circle, color: AppTheme.primaryGreen, size: 8),
-                            const SizedBox(width: 8),
-                            Expanded(child: Text(trip.pickupAddress, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500), maxLines: 1, overflow: TextOverflow.ellipsis)),
-                          ]),
+                          Row(
+                            children: [
+                              const Icon(
+                                Icons.circle,
+                                color: AppTheme.primaryGreen,
+                                size: 8,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  trip.pickupAddress,
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
                           const SizedBox(height: 8),
                           // Dropoff
-                          Row(children: [
-                            const Icon(Icons.square, color: AppTheme.error, size: 8),
-                            const SizedBox(width: 8),
-                            Expanded(child: Text(trip.dropoffAddress, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500), maxLines: 1, overflow: TextOverflow.ellipsis)),
-                          ]),
+                          Row(
+                            children: [
+                              const Icon(
+                                Icons.square,
+                                color: AppTheme.error,
+                                size: 8,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  trip.dropoffAddress,
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
                         ],
                       ),
                     ),
@@ -248,12 +324,19 @@ class _TripHistoryScreenState extends State<TripHistoryScreen> {
                       children: [
                         Text(
                           _getVehicleName(trip.vehicleType),
-                          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppTheme.primaryGreen),
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: AppTheme.primaryGreen,
+                          ),
                         ),
                         const SizedBox(height: 4),
                         Text(
                           _getPaymentMethodText(trip.paymentMethod),
-                          style: const TextStyle(fontSize: 12, color: AppTheme.grey),
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: AppTheme.grey,
+                          ),
                         ),
                       ],
                     ),
@@ -262,17 +345,33 @@ class _TripHistoryScreenState extends State<TripHistoryScreen> {
                       children: [
                         Text(
                           _formatCurrency(trip.totalFare),
-                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppTheme.black),
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: AppTheme.black,
+                          ),
                         ),
                         if (trip.status == 'completed') ...[
-                           const SizedBox(height: 4),
-                           // Fake rating tạm thời vì API list chưa trả về rating
-                           const Row(children: [
-                             Icon(Icons.star, color: AppTheme.warning, size: 14),
-                             SizedBox(width: 2),
-                             Text('5.0', style: TextStyle(fontSize: 12, color: AppTheme.grey)),
-                           ])
-                        ]
+                          const SizedBox(height: 4),
+                          // Fake rating tạm thời vì API list chưa trả về rating
+                          const Row(
+                            children: [
+                              Icon(
+                                Icons.star,
+                                color: AppTheme.warning,
+                                size: 14,
+                              ),
+                              SizedBox(width: 2),
+                              Text(
+                                '5.0',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: AppTheme.grey,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
                       ],
                     ),
                   ],

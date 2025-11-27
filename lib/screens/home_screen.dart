@@ -6,7 +6,9 @@ import '../services/location_service.dart';
 import '../services/ride_service.dart';
 import '../models/ride_models.dart';
 import 'location_search_screen.dart';
-import 'vehicle_selection_map_screen.dart'; // ✅ Dùng màn hình có sẵn
+import 'vehicle_selection_map_screen.dart'; //  Dùng màn hình có sẵn
+import '../models/promotion_model.dart'; // Import model mới
+import '../services/promotion_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -70,7 +72,7 @@ class _HomeScreenState extends State<HomeScreen> {
       });
 
       print('========================================');
-      print('📍 VỊ TRÍ HIỆN TẠI (Điểm đi)');
+      print(' VỊ TRÍ HIỆN TẠI (Điểm đi)');
       print('========================================');
       print('Latitude:  ${result.location!.latitude}');
       print('Longitude: ${result.location!.longitude}');
@@ -156,7 +158,7 @@ class _HomeScreenState extends State<HomeScreen> {
         });
 
         print('========================================');
-        print('🚗 DỮ LIỆU GỬI LÊN SERVER (JSON)');
+        print(' DỮ LIỆU GỬI LÊN SERVER (JSON)');
         print('========================================');
         print('{');
         print('  "pickupLat": ${_pickupLatLng!.latitude},');
@@ -240,7 +242,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _updateRoute();
   }
 
-  // ✅ Gọi API và chuyển sang màn hình chọn xe
+  //  Gọi API và chuyển sang màn hình chọn xe
   Future<void> _onBookRide() async {
     if (_pickupLatLng == null || _destinationLatLng == null) {
       _showError('Vui lòng chọn điểm đi và điểm đến');
@@ -261,10 +263,31 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  final PromotionService _promotionService = PromotionService();
+  List<Promotion> _promotions = [];
+  bool _isLoadingPromos = true;
   @override
   void initState() {
     super.initState();
+    print(' HomeScreen initState được gọi');
     _getCurrentLocation();
+    _loadPromotions();
+  }
+
+  Future<void> _loadPromotions() async {
+    final promos = await _promotionService.getActivePromotions();
+    if (mounted) {
+      setState(() {
+        _promotions = promos;
+        _isLoadingPromos = false;
+      });
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    print(' HomeScreen didChangeDependencies được gọi');
   }
 
   @override
@@ -277,6 +300,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    print(' HomeScreen build được gọi');
     return Scaffold(
       backgroundColor: AppTheme.white,
       body: SafeArea(
@@ -296,7 +320,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     const SizedBox(height: 24),
                     _buildVoucherSection(),
 
-                    // ✅ Nút đặt xe
+                    //  Nút đặt xe
                     if (_pickupLatLng != null && _destinationLatLng != null)
                       Padding(
                         padding: const EdgeInsets.all(16),
@@ -466,7 +490,13 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildServiceIcon(String emoji, String label, Color color) {
     return InkWell(
-      onTap: () {},
+      onTap: () {
+        //  Chuyển sang màn hình tìm kiếm địa điểm
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => const LocationSearchScreen()),
+        );
+      },
       child: Column(
         children: [
           Container(
@@ -535,22 +565,52 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         const SizedBox(height: 12),
         SizedBox(
-          height: 140,
-          child: ListView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            children: [
-              _buildVoucherCard('Giảm 20K', 'Đơn từ 50K', Colors.orange),
-              _buildVoucherCard('Giảm 30K', 'Đơn từ 100K', Colors.blue),
-              _buildVoucherCard('Giảm 50K', 'Đơn từ 200K', Colors.purple),
-            ],
-          ),
+          height: 180,
+          child: _isLoadingPromos
+              ? const Center(child: CircularProgressIndicator()) // Loading...
+              : _promotions.isEmpty
+              ? const Center(child: Text("Chưa có mã khuyến mãi nào"))
+              : ListView.builder(
+                  // Dùng ListView.builder để render list động
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  itemCount: _promotions.length,
+                  itemBuilder: (context, index) {
+                    final promo = _promotions[index];
+                    // Lấy màu ngẫu nhiên cho đẹp
+                    final color = _getVoucherColor(index);
+
+                    return _buildVoucherCard(
+                      promo.displayText, // VD: "Giảm 50%"
+                      promo.description, // VD: "Đơn từ 0đ"
+                      color,
+                      promo
+                          .promoCode, // Truyền thêm code để sau này bấm vào thì copy
+                    );
+                  },
+                ),
         ),
       ],
     );
   }
 
-  Widget _buildVoucherCard(String discount, String condition, Color color) {
+  Color _getVoucherColor(int index) {
+    const colors = [
+      Colors.orange,
+      Colors.blue,
+      Colors.purple,
+      Colors.teal,
+      Colors.red,
+    ];
+    return colors[index % colors.length];
+  }
+
+  Widget _buildVoucherCard(
+    String discount,
+    String condition,
+    Color color,
+    String code,
+  ) {
     return Container(
       width: 180,
       margin: const EdgeInsets.only(right: 12),
@@ -579,6 +639,25 @@ class _HomeScreenState extends State<HomeScreen> {
           Text(
             condition,
             style: const TextStyle(color: Colors.white70, fontSize: 14),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(height: 8),
+          // Hiển thị mã code nhỏ nhỏ
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Text(
+              code,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
           ),
         ],
       ),

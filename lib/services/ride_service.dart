@@ -12,13 +12,13 @@ class RideService {
 
   final AuthService _authService = AuthService();
 
-  // 🧮 Tính giá cước
+  //  Tính giá cước
   Future<CalculateFareResponse?> calculateFare(
     CalculateFareRequest request,
   ) async {
     try {
       print('========================================');
-      print('📤 GỬI REQUEST TÍNH GIÁ');
+      print(' GỬI REQUEST TÍNH GIÁ');
       print('========================================');
       print('URL: $baseUrl/calculate-fare');
       print('Body: ${jsonEncode(request.toJson())}');
@@ -38,7 +38,7 @@ class RideService {
           .timeout(const Duration(seconds: 10));
 
       print('========================================');
-      print('📥 NHẬN RESPONSE');
+      print(' NHẬN RESPONSE');
       print('========================================');
       print('Status: ${response.statusCode}');
       print('Body: ${response.body}');
@@ -48,11 +48,11 @@ class RideService {
         final json = jsonDecode(response.body);
         return CalculateFareResponse.fromJson(json);
       } else {
-        print('❌ Lỗi: ${response.statusCode} - ${response.body}');
+        print(' Lỗi: ${response.statusCode} - ${response.body}');
         return null;
       }
     } catch (e) {
-      print('❌ Exception: $e');
+      print(' Exception: $e');
       return null;
     }
   }
@@ -61,19 +61,19 @@ class RideService {
   Future<CreateRideResponse?> bookRide(CreateRideRequest request) async {
     try {
       print('========================================');
-      print('📤 GỬI REQUEST ĐẶT XE');
+      print(' GỬI REQUEST ĐẶT XE');
       print('========================================');
       print('URL: $baseUrl/book');
       print('Body: ${jsonEncode(request.toJson())}');
       print('========================================\n');
 
       final token = await _authService.getAccessToken();
-      // 👇 THÊM DÒNG NÀY ĐỂ CHECK
-      print('🔑 TOKEN CỦA TAO LÀ: $token'); 
+      //  THÊM DÒNG NÀY ĐỂ CHECK
+      print(' TOKEN CỦA TAO LÀ: $token');
 
       if (token == null || token.isEmpty) {
-          print('❌ CHẾT MẸ RỒI, TOKEN BỊ NULL!');
-          return null;
+        print(' CHẾT MẸ RỒI, TOKEN BỊ NULL!');
+        return null;
       }
       final response = await http
           .post(
@@ -87,7 +87,7 @@ class RideService {
           .timeout(const Duration(seconds: 15));
 
       print('========================================');
-      print('📥 NHẬN RESPONSE ĐẶT XE');
+      print(' NHẬN RESPONSE ĐẶT XE');
       print('========================================');
       print('Status: ${response.statusCode}');
       print('Body: ${response.body}');
@@ -97,16 +97,16 @@ class RideService {
         final json = jsonDecode(response.body);
         return CreateRideResponse.fromJson(json);
       } else {
-        print('❌ Lỗi: ${response.statusCode} - ${response.body}');
+        print(' Lỗi: ${response.statusCode} - ${response.body}');
         return null;
       }
     } catch (e) {
-      print('❌ Exception: $e');
+      print(' Exception: $e');
       return null;
     }
   }
 
-  // 📍 Lấy thông tin ride
+  //  Lấy thông tin ride
   Future<RideDetail?> getRide(String rideId) async {
     try {
       final token = await _authService.getAccessToken();
@@ -124,16 +124,16 @@ class RideService {
       }
       return null;
     } catch (e) {
-      print('❌ Exception: $e');
+      print(' Exception: $e');
       return null;
     }
   }
 
-  // ❌ Hủy chuyến xe
- Future<bool> cancelRide(String rideId, String reason) async {
+  //  Hủy chuyến xe
+  Future<bool> cancelRide(String rideId, String reason) async {
     try {
       final token = await _authService.getAccessToken();
-print('🔻 ĐANG GỌI API CANCEL CHO ID: $rideId'); 
+      print(' ĐANG GỌI API CANCEL CHO ID: $rideId');
       print('URL: $baseUrl/$rideId/cancel');
       // Gọi đúng endpoint /cancel mà controller định nghĩa
       final response = await http
@@ -153,48 +153,52 @@ print('🔻 ĐANG GỌI API CANCEL CHO ID: $rideId');
 
       return response.statusCode == 200;
     } catch (e) {
-      print('❌ Exception: $e');
+      print(' Exception: $e');
       return false;
     }
   }
+
   Future<List<RideHistoryItem>> getRideHistory() async {
     try {
       final token = await _authService.getAccessToken();
-      
+
       // Gọi GET /api/Rides
-      final response = await http.get(
-        Uri.parse('$baseUrl'), 
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
-      ).timeout(const Duration(seconds: 10));
+      final response = await http
+          .get(
+            Uri.parse('$baseUrl'),
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $token',
+            },
+          )
+          .timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
         final List<dynamic> jsonList = jsonDecode(response.body);
         return jsonList.map((json) => RideHistoryItem.fromJson(json)).toList();
       } else {
-        print('❌ Lỗi lấy lịch sử: ${response.statusCode}');
+        print(' Lỗi lấy lịch sử: ${response.statusCode}');
         return [];
       }
     } catch (e) {
-      print('❌ Exception: $e');
+      print(' Exception: $e');
       return [];
     }
   }
+
   Future<RideDetail?> getRideForTracking(String rideId) async {
     try {
       final token = await _authService.getAccessToken();
-      
+
       // Gọi vào đường dẫn có đuôi /details như Backend đã viết
-      final url = '$baseUrl/$rideId/details'; 
-      print("🔗 Đang gọi API chi tiết (kèm SĐT): $url");
+      final url = '$baseUrl/$rideId/details';
+      print(" Đang gọi API chi tiết (kèm SĐT): $url");
 
       final response = await http.get(
         Uri.parse(url),
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token'
+          'Authorization': 'Bearer $token',
         },
       );
 
@@ -203,11 +207,11 @@ print('🔻 ĐANG GỌI API CANCEL CHO ID: $rideId');
         // Parse JSON sang Model
         return RideDetail.fromJson(json);
       } else {
-        print("❌ Lỗi lấy chi tiết ride: ${response.body}");
+        print(" Lỗi lấy chi tiết ride: ${response.body}");
         return null;
       }
     } catch (e) {
-      print("❌ Exception Tracking: $e");
+      print(" Exception Tracking: $e");
       return null;
     }
   }

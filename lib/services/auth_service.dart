@@ -3,10 +3,12 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/auth_models.dart';
 import '../config/config.dart';
+
 class AuthService {
   // Đổi URL này thành URL backend của bạn
   // static const String baseUrl = 'http://10.0.2.2:5267/api/Auth'; //đường link dành cho máy ảo Android
-  static const String baseUrl = '${AppConfig.baseUrl}/api/Auth'; //link dành cho máy thật sử dụng máy thật mới lấy được vị trí hiện tại chính xác
+  static const String baseUrl =
+      '${AppConfig.baseUrl}/api/Auth'; //link dành cho máy thật sử dụng máy thật mới lấy được vị trí hiện tại chính xác
   String? _token;
   String? _refreshToken;
   UserDto? _currentUser;
@@ -186,7 +188,7 @@ class AuthService {
             headers: _getHeaders(),
             body: jsonEncode({
               'refreshToken': _refreshToken,
-            }), // ✅ Thêm refreshToken vào body
+            }), //  Thêm refreshToken vào body
           )
           .timeout(const Duration(seconds: 5));
 
@@ -198,7 +200,7 @@ class AuthService {
     } catch (e) {
       print('Logout error (ignored): $e');
     } finally {
-      // ✅ Luôn clear tokens dù API fail
+      //  Luôn clear tokens dù API fail
       await _clearTokens();
     }
   }
@@ -322,7 +324,7 @@ class AuthService {
     }
   }
 
-  // ✅ THÊM METHOD NÀY
+  //  THÊM METHOD NÀY
   Future<String?> getAccessToken() async {
     if (_token != null) {
       return _token;

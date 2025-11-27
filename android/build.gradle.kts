@@ -10,7 +10,7 @@ buildscript {
         // Classpath cho Kotlin (Kiểm tra version nếu cần)
         classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:1.8.22")
         
-        // 👇 Classpath cho Google Services (Firebase) - QUAN TRỌNG
+        //  Classpath cho Google Services (Firebase) - QUAN TRỌNG
         classpath("com.google.gms:google-services:4.4.2")
     }
 }

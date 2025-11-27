@@ -8,9 +8,9 @@ import 'package:geolocator/geolocator.dart';
 import 'pickup_confirmation_screen.dart';
 
 class LocationSearchScreen extends StatefulWidget {
-  final String? initialDestination; // ✅ Thêm tham số nhận điểm đến ban đầu
-  final String? initialPickup; // ✅ Thêm tham số nhận điểm đón ban đầu
-  final bool isEditingPickup; // ✅ Cho biết đang chỉnh sửa điểm đón
+  final String? initialDestination; //  Thêm tham số nhận điểm đến ban đầu
+  final String? initialPickup; //  Thêm tham số nhận điểm đón ban đầu
+  final bool isEditingPickup; //  Cho biết đang chỉnh sửa điểm đón
 
   const LocationSearchScreen({
     super.key,
@@ -26,14 +26,13 @@ class LocationSearchScreen extends StatefulWidget {
 class _LocationSearchScreenState extends State<LocationSearchScreen> {
   final TextEditingController _searchController = TextEditingController();
   final TextEditingController _destinationController = TextEditingController();
-  final FocusNode _searchFocusNode =
-      FocusNode(); // ✅ Thêm FocusNode cho điểm đi
+  final FocusNode _searchFocusNode = FocusNode(); //  Thêm FocusNode cho điểm đi
   final FocusNode _destinationFocusNode = FocusNode();
   List<Map<String, dynamic>> _suggestions = [];
   Timer? _debounce;
   bool _showRecent = true;
   bool _isLoading = false;
-  bool _isSearchingPickup = false; // ✅ Biết đang search ô nào
+  bool _isSearchingPickup = false; //  Biết đang search ô nào
 
   LatLng? _currentPosition;
 
@@ -65,7 +64,7 @@ class _LocationSearchScreenState extends State<LocationSearchScreen> {
   void initState() {
     super.initState();
 
-    // ✅ Xử lý initialPickup
+    //  Xử lý initialPickup
     if (widget.initialPickup != null) {
       _searchController.text = widget.initialPickup!;
     } else {
@@ -78,7 +77,7 @@ class _LocationSearchScreenState extends State<LocationSearchScreen> {
 
     _getCurrentLocation();
 
-    // ✅ Focus vào ô điểm đón nếu đang edit
+    //  Focus vào ô điểm đón nếu đang edit
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (widget.isEditingPickup) {
         _searchFocusNode.requestFocus();
@@ -272,7 +271,7 @@ class _LocationSearchScreenState extends State<LocationSearchScreen> {
   }
 
   void _selectLocation(String name, String address, {String? placeId}) async {
-    // ✅ Nếu đang search điểm đi
+    //  Nếu đang search điểm đi
     if (_isSearchingPickup) {
       showDialog(
         context: context,
@@ -293,7 +292,7 @@ class _LocationSearchScreenState extends State<LocationSearchScreen> {
       if (mounted) Navigator.pop(context);
 
       if (pickupLatLng != null) {
-        // ✅ Nếu đang edit điểm đón từ màn hình xác nhận
+        //  Nếu đang edit điểm đón từ màn hình xác nhận
         if (widget.isEditingPickup && widget.initialDestination != null) {
           // Lấy lại destinationLatLng
           final destLatLng = await _geocodeAddress(widget.initialDestination!);
@@ -324,7 +323,7 @@ class _LocationSearchScreenState extends State<LocationSearchScreen> {
       return;
     }
 
-    // ✅ Xử lý khi chọn điểm đến (giữ nguyên logic cũ)
+    //  Xử lý khi chọn điểm đến (giữ nguyên logic cũ)
     bool isUsingCurrentLocation =
         (_searchController.text == DEFAULT_PICKUP_TEXT);
 
@@ -528,7 +527,7 @@ class _LocationSearchScreenState extends State<LocationSearchScreen> {
                               ),
                               style: const TextStyle(fontSize: 14),
 
-                              // 👇 QUAN TRỌNG: Xử lý khi bấm vào
+                              //  QUAN TRỌNG: Xử lý khi bấm vào
                               onTap: () {
                                 if (_searchController.text ==
                                     DEFAULT_PICKUP_TEXT) {
@@ -575,7 +574,7 @@ class _LocationSearchScreenState extends State<LocationSearchScreen> {
                               onChanged: (value) => _onSearchChanged(
                                 value,
                                 false,
-                              ), // ✅ isPickup = false
+                              ), //  isPickup = false
                             ),
                           ),
                           if (_isLoading)

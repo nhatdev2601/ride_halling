@@ -236,29 +236,10 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                           ),
                         ),
 
-                        const SizedBox(height: 8),
+                  
 
                         // Skip Button
-                        TextButton(
-                          onPressed: () {
-                            // Navigate directly to main app (guest mode)
-                            Navigator.pushReplacement(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => const MainScreen(),
-                              ),
-                            );
-                          },
-                          child: const Text(
-                            'Bỏ qua - Dùng thử',
-                            style: TextStyle(
-                              color: AppTheme.white,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
-                              decoration: TextDecoration.underline,
-                            ),
-                          ),
-                        ),
+                     
                       ],
                     ),
                   ),
