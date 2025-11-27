@@ -16,8 +16,8 @@ namespace api_ride.Services
         Task<RefreshToken?> GetRefreshTokenAsync(string token);
         Task<bool> RevokeRefreshTokenAsync(string token);
         Task<bool> RevokeAllUserRefreshTokensAsync(Guid userId);
- 
 
+        Task<RowSet> ExecuteQueryAsync(string query, object[] args);
         // Ride operations
         Task<bool> CreateRideAsync(Ride ride);
         Task<Ride?> GetRideByIdAsync(Guid rideId);
@@ -86,13 +86,31 @@ namespace api_ride.Services
                 return null;
             }
         }
+        public async Task<RowSet> ExecuteQueryAsync(string query, object[] args)
+        {
+            try
+            {
+                // 1. Chuẩn bị câu lệnh (Prepare)
+                var preparedStatement = await _session.PrepareAsync(query);
 
+                // 2. Gán tham số (Bind)
+                var boundStatement = preparedStatement.Bind(args);
+
+                // 3. Thực thi và trả về RowSet
+                return await _session.ExecuteAsync(boundStatement);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error executing raw CQL query: {Query}", query);
+                throw;
+            }
+        }
         public async Task<User?> GetUserByEmailAsync(string email)
         {
             try
             {
                 // Bước 1: Tìm ID từ bảng phụ (Query cực nhanh vì email là Key)
-                var idCql = "SELECT user_id FROM users_by_email WHERE email = ?";
+                var idCql = "SELECT * FROM users_by_email WHERE email = ?";
                 var idRow = (await _session.ExecuteAsync((await _session.PrepareAsync(idCql)).Bind(email))).FirstOrDefault();
 
                 if (idRow == null) return null; // Không tìm thấy email
@@ -478,7 +496,7 @@ namespace api_ride.Services
             {
                 
 
-                var cql = "SELECT * FROM rides WHERE driver_id = ? LIMIT ? ALLOW FILTERING";
+                var cql = "SELECT * FROM rides WHERE driver_id = ? LIMIT ?";
                 var statement = await _session.PrepareAsync(cql);
                 var result = await _session.ExecuteAsync(statement.Bind(driverId, limit));
                 
@@ -495,13 +513,29 @@ namespace api_ride.Services
         {
             try
             {
-              
+                // ✅ Query từng status trong bảng rides_by_status (Partition Key)
+                var activeStatuses = new[] { "requesting", "accepted", "arrived", "in_progress" };
+                var allActiveRides = new List<Guid>(); // Chỉ lấy ride_id trước
 
-                var cql = "SELECT * FROM rides WHERE status IN ('requesting', 'accepted', 'arrived', 'in_progress') ALLOW FILTERING";
-                var statement = await _session.PrepareAsync(cql);
-                var result = await _session.ExecuteAsync(statement.Bind());
-                
-                return result.Select(MapRowToRide).ToList();
+                foreach (var status in activeStatuses)
+                {
+                    var cql = "SELECT ride_id FROM rides_by_status WHERE status = ? LIMIT 100";
+                    var statement = await _session.PrepareAsync(cql);
+                    var result = await _session.ExecuteAsync(statement.Bind(status));
+
+                    var rideIds = result.Select(row => row.GetValue<Guid>("ride_id")).ToList();
+                    allActiveRides.AddRange(rideIds);
+                }
+
+                // ✅ Sau đó mới query chi tiết từ bảng rides (Query theo Primary Key - cực nhanh)
+                var rides = new List<Ride>();
+                foreach (var rideId in allActiveRides.Distinct()) // Distinct để tránh trùng
+                {
+                    var ride = await GetRideByIdAsync(rideId);
+                    if (ride != null) rides.Add(ride);
+                }
+
+                return rides;
             }
             catch (Exception ex)
             {
@@ -545,7 +579,7 @@ namespace api_ride.Services
                 var cql = @"SELECT driver_id, user_id, license_number, license_expiry, vehicle_id, 
                            current_location_lat, current_location_lng, is_available, online_status, 
                            rating, total_earnings, completed_trips, created_at, updated_at 
-                           FROM drivers WHERE user_id = ? ALLOW FILTERING";
+                           FROM drivers WHERE user_id = ? ";
                 var statement = await _session.PrepareAsync(cql);
                 var result = await _session.ExecuteAsync(statement.Bind(userId));
                 var row = result.FirstOrDefault();
@@ -695,7 +729,7 @@ namespace api_ride.Services
                
 
                 var cql = @"SELECT vehicle_id, driver_id, vehicle_type, brand, model, color, license_plate, status, created_at, updated_at 
-                           FROM vehicles WHERE driver_id = ? ALLOW FILTERING";
+                           FROM vehicles WHERE driver_id = ? ";
                 var statement = await _session.PrepareAsync(cql);
                 var result = await _session.ExecuteAsync(statement.Bind(driverId));
                 var row = result.FirstOrDefault();

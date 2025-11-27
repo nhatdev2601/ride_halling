@@ -284,7 +284,7 @@ namespace api_ride.Controllers
 
 
         [HttpPost("{id}/cancel")]
-        public async Task<IActionResult> CancelRide(string id, [FromBody] CancelRideRequest request)
+        public async Task<IActionResult> CancelRide(string id, [FromBody] AdminCancelRideRequest request)
         {
             try
             {
@@ -321,11 +321,11 @@ namespace api_ride.Controllers
         }
 
         // DTO đơn giản
-        public class CancelRideRequest
+
+        public class AdminCancelRideRequest
         {
             public string Reason { get; set; } = "Changed plans";
         }
-
 
         private bool IsValidStatusTransition(string currentStatus, string newStatus, string? userRole)
         {
