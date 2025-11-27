@@ -19,6 +19,8 @@ class AppTheme {
   static const Color error = Color(0xFFF44336);
   static const Color info = Color(0xFF2196F3);
 
+  static var blue;
+
   static ThemeData get lightTheme {
     return ThemeData(
       primarySwatch: MaterialColor(0xFF00B14F, <int, Color>{
