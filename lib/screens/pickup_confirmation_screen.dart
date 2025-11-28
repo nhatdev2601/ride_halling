@@ -8,14 +8,14 @@ class PickupConfirmationScreen extends StatefulWidget {
   final String pickupAddress;
   final LatLng pickupLatLng;
   final String destinationAddress;
-  final LatLng destinationLatLng; // ✅ Đổi thành non-nullable
+  final LatLng destinationLatLng; //  Đổi thành non-nullable
 
   const PickupConfirmationScreen({
     super.key,
     required this.pickupAddress,
     required this.pickupLatLng,
     required this.destinationAddress,
-    required this.destinationLatLng, // ✅ Required, không nullable
+    required this.destinationLatLng, //  Required, không nullable
   });
 
   @override
@@ -155,7 +155,7 @@ class _PickupConfirmationScreenState extends State<PickupConfirmationScreen> {
                         IconButton(
                           icon: const Icon(Icons.edit, color: Colors.grey),
                           onPressed: () async {
-                            // ✅ Chuyển đến màn hình LocationSearchScreen để edit điểm đón
+                            //  Chuyển đến màn hình LocationSearchScreen để edit điểm đón
                             final result = await Navigator.push(
                               context,
                               MaterialPageRoute(
@@ -163,12 +163,12 @@ class _PickupConfirmationScreenState extends State<PickupConfirmationScreen> {
                                   initialPickup: widget.pickupAddress,
                                   initialDestination: widget.destinationAddress,
                                   isEditingPickup:
-                                      true, // ✅ Đánh dấu đang edit điểm đón
+                                      true, //  Đánh dấu đang edit điểm đón
                                 ),
                               ),
                             );
 
-                            // ✅ Nếu người dùng chọn điểm đón mới, reload màn hình
+                            //  Nếu người dùng chọn điểm đón mới, reload màn hình
                             if (result != null &&
                                 result is Map<String, dynamic>) {
                               Navigator.pushReplacement(

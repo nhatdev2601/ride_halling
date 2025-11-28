@@ -4,7 +4,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../config/config.dart'; // Import file config chứa baseUrl
 
 class LocationServiceDriver {
-  // ⚠️ CHÚ Ý: API này nằm ở SimulationController, đường dẫn khác với Rides
+  //  CHÚ Ý: API này nằm ở SimulationController, đường dẫn khác với Rides
   // Nếu mày dùng Ngrok thì nó là: https://.../api/simulation
   static const String simulationUrl = '${AppConfig.baseUrl}/api/simulation';
 
@@ -28,31 +28,32 @@ class LocationServiceDriver {
             body: jsonEncode({
               'latitude': location.latitude,
               'longitude': location.longitude,
-              'address': 'Vị trí khách hàng (Fake)'
+              'address': 'Vị trí khách hàng (Fake)',
             }),
           )
           .timeout(const Duration(seconds: 10));
 
-      print('📥 RESPONSE FAKE VỊ TRÍ: ${response.statusCode}');
+      print(' RESPONSE FAKE VỊ TRÍ: ${response.statusCode}');
 
       if (response.statusCode == 200) {
-        print('✅ Đã dời tài xế thành công!');
+        print(' Đã dời tài xế thành công!');
         return true;
       } else {
-        print('❌ Lỗi fake vị trí: ${response.body}');
+        print(' Lỗi fake vị trí: ${response.body}');
         return false;
       }
     } catch (e) {
-      print('❌ Exception fake vị trí: $e');
+      print(' Exception fake vị trí: $e');
       return false;
     }
   }
+
   Future<bool> teleportDriverToPickup(String rideId) async {
     try {
       final String url = '$simulationUrl/teleport-to-pickup/$rideId';
-      
+
       print('🚀 [Flutter] Đang gọi Teleport Driver...');
-      print('🔗 URL: $url');
+      print(' URL: $url');
 
       final response = await http.post(
         Uri.parse(url),
@@ -63,14 +64,16 @@ class LocationServiceDriver {
       );
 
       if (response.statusCode == 200) {
-        print('✅ [Flutter] Teleport thành công! Xe đã nhảy tới gần điểm đón.');
+        print(' [Flutter] Teleport thành công! Xe đã nhảy tới gần điểm đón.');
         return true;
       } else {
-        print('❌ [Flutter] Lỗi Teleport: ${response.statusCode} - ${response.body}');
+        print(
+          ' [Flutter] Lỗi Teleport: ${response.statusCode} - ${response.body}',
+        );
         return false;
       }
     } catch (e) {
-      print('❌ [Flutter] Exception Teleport: $e');
+      print(' [Flutter] Exception Teleport: $e');
       return false;
     }
   }

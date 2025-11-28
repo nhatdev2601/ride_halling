@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_rating_bar/flutter_rating_bar.dart';
 import '../theme/app_theme.dart';
 import '../models/models.dart';
-import 'trip_history_screen.dart';
+import 'main_screen.dart'; //  Đổi sang MainScreen
 
 class TripRatingScreen extends StatefulWidget {
   final Trip trip;
@@ -36,7 +36,9 @@ class _TripRatingScreenState extends State<TripRatingScreen> {
     // Xử lý gửi đánh giá
     Navigator.pushAndRemoveUntil(
       context,
-      MaterialPageRoute(builder: (context) => const TripHistoryScreen()),
+      MaterialPageRoute(
+        builder: (context) => const MainScreen(),
+      ), //  Quay về MainScreen
       (route) => false,
     );
   }

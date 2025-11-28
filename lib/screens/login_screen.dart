@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
-import '../services/auth_service.dart'; // ✅ Thêm import AuthService
-import '../models/auth_models.dart'; // ✅ Thêm import AuthModels
+import '../services/auth_service.dart'; //  Thêm import AuthService
+import '../models/auth_models.dart'; //  Thêm import AuthModels
 import 'register_screen.dart';
 import 'main_screen.dart'; // ✅ MainScreen cho passenger
 
@@ -27,7 +27,7 @@ class _LoginScreenState extends State<LoginScreen>
     text: "admin@rideapp.com",
   ); // ✅ Đổi email mặc định thành admin để test
   final _passwordController = TextEditingController(text: "123456");
-  final AuthService _authService = AuthService(); // ✅ Thêm AuthService
+  final AuthService _authService = AuthService(); //  Thêm AuthService
 
   bool _obscurePassword = true;
   bool _isLoading = false;
@@ -76,7 +76,7 @@ class _LoginScreenState extends State<LoginScreen>
   }
 
   Future<void> _login() async {
-    // ✅ Kiểm tra validation trước
+    //  Kiểm tra validation trước
     if (!_formKey.currentState!.validate()) {
       return;
     }
@@ -86,7 +86,7 @@ class _LoginScreenState extends State<LoginScreen>
     });
 
     try {
-      // ✅ Gọi API login thật
+      //  Gọi API login thật
       final response = await _authService.login(
         LoginRequest(
           email: _emailController.text.trim(),
@@ -132,7 +132,7 @@ class _LoginScreenState extends State<LoginScreen>
     } catch (e) {
       if (!mounted) return;
 
-      // ✅ Hiển thị lỗi chi tiết
+      //  Hiển thị lỗi chi tiết
       String errorMessage = 'Đăng nhập thất bại';
 
       if (e.toString().contains('Invalid credentials')) {

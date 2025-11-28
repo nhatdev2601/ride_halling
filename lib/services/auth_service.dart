@@ -188,7 +188,7 @@ class AuthService {
             headers: _getHeaders(),
             body: jsonEncode({
               'refreshToken': _refreshToken,
-            }), // ✅ Thêm refreshToken vào body
+            }), //  Thêm refreshToken vào body
           )
           .timeout(const Duration(seconds: 5));
 
@@ -200,7 +200,7 @@ class AuthService {
     } catch (e) {
       print('Logout error (ignored): $e');
     } finally {
-      // ✅ Luôn clear tokens dù API fail
+      //  Luôn clear tokens dù API fail
       await _clearTokens();
     }
   }
@@ -324,7 +324,7 @@ class AuthService {
     }
   }
 
-  // ✅ THÊM METHOD NÀY
+  //  THÊM METHOD NÀY
   Future<String?> getAccessToken() async {
     if (_token != null) {
       return _token;

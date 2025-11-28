@@ -3,10 +3,14 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:http/http.dart' as http;
 import 'package:ride_hailing/services/location_service_driver.dart';
 import 'dart:convert';
+import 'dart:math' show cos, sqrt, sin, atan2;
 import '../theme/app_theme.dart';
 import '../services/ride_service.dart';
+import '../services/promotion_service.dart';
 import '../models/ride_models.dart';
+import '../models/promotion_model.dart';
 import 'ride_tracking_screen.dart';
+
 class VehicleSelectionMapScreen extends StatefulWidget {
   final String pickupAddress;
   final LatLng pickupLatLng;
@@ -37,9 +41,12 @@ class _VehicleSelectionMapScreenState extends State<VehicleSelectionMapScreen> {
   double _tripDistance = 0.0;
   final LocationServiceDriver _locationService = LocationServiceDriver();
   final RideService _rideService = RideService();
+  final PromotionService _promotionService = PromotionService();
   CalculateFareResponse? _fareResponse;
   String _selectedVehicleType = 'bike';
-
+  String? _selectedPromoCode;
+  String _promoText = 'Mã giảm giá';
+  List<Promotion> _promotions = [];
   List<Map<String, dynamic>> _vehicles = [];
 
   static const String GOONG_API_KEY =
@@ -49,13 +56,35 @@ class _VehicleSelectionMapScreenState extends State<VehicleSelectionMapScreen> {
   void initState() {
     super.initState();
     _initMap();
-   // _calculateFare();
+    _loadPromotions();
+  }
+
+  Future<void> _loadPromotions() async {
+    final promos = await _promotionService.getActivePromotions();
+    if (mounted) {
+      setState(() {
+        _promotions = promos;
+      });
+    }
   }
 
   //  Gọi API tính giá
-  Future<void> _calculateFare(double distanceKm) async {
-    if (distanceKm <= 0) return;
-    _tripDistance = distanceKm;
+  Future<void> _calculateFare({double? distanceKm, String? promoCode}) async {
+    // Nếu không truyền distance thì lấy cái đã lưu (dùng khi áp mã)
+    double dist = distanceKm ?? _tripDistance;
+
+    if (dist <= 0) return;
+    _tripDistance = dist; // Lưu lại để dùng sau
+
+    // Hiện loading nhẹ nếu đang áp mã
+    if (promoCode != null) {
+      setState(() => _isLoading = true);
+    }
+
+    print(
+      ' Đang gọi API tính giá với khoảng cách: $dist km, mã: ${promoCode ?? "không có"}',
+    );
+
     try {
       final request = CalculateFareRequest(
         pickupLocation: LocationDto(
@@ -68,35 +97,67 @@ class _VehicleSelectionMapScreenState extends State<VehicleSelectionMapScreen> {
           longitude: widget.destinationLatLng.longitude,
           address: widget.destinationAddress,
         ),
-        distance: distanceKm,
+        distance: dist,
         vehicleType: 'bike',
+        promoCode: promoCode ?? '', // Truyền mã hoặc chuỗi rỗng
       );
 
       final fareResponse = await _rideService.calculateFare(request);
 
       if (fareResponse != null && mounted) {
+        print(
+          ' API tính giá thành công! Số xe: ${fareResponse.availableVehicles.length}',
+        );
+
         setState(() {
           _fareResponse = fareResponse;
+
+          //  Cập nhật text hiển thị mã nếu có giảm giá
+          if (fareResponse.discount > 0) {
+            _promoText =
+                "Đã giảm ${formatMoney(fareResponse.discount.toInt())}đ";
+            _selectedPromoCode = promoCode; // Lưu mã lại để lát book
+          } else if (promoCode != null && promoCode.isNotEmpty) {
+            _promoText = "Mã không hợp lệ hoặc không giảm";
+            _selectedPromoCode = null;
+          }
+
+          // Map dữ liệu xe
           _vehicles = fareResponse.availableVehicles.map((v) {
             return {
               'name': v.displayName,
               'icon': _getVehicleEmoji(v.vehicleType),
               'seats': v.vehicleType == 'bike' ? 1 : 4,
               'time': '${v.estimatedArrival} phút',
-              'price': v.totalFare.toInt(),
-              'oldPrice': null,
-              'promo': null,
+              'price': v.totalFare.toInt(), // Giá này server đã trừ tiền rồi
               'vehicleType': v.vehicleType,
             };
           }).toList();
 
           if (_vehicles.isNotEmpty) {
-            _selectedVehicleType = _vehicles[0]['vehicleType'];
+            // Giữ nguyên xe đang chọn nếu có, không thì reset về đầu
+            bool stillExists = _vehicles.any(
+              (v) => v['vehicleType'] == _selectedVehicleType,
+            );
+            if (!stillExists) {
+              _selectedVehicleType = _vehicles[0]['vehicleType'];
+            }
           }
+
+          //  QUAN TRỌNG: Tắt loading sau khi có dữ liệu
+          _isLoading = false;
         });
+      } else {
+        print(' API tính giá trả về null');
+        if (mounted) {
+          setState(() => _isLoading = false);
+        }
       }
     } catch (e) {
-      print('❌ Lỗi tính giá: $e');
+      print(' Lỗi tính giá: $e');
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
@@ -113,8 +174,7 @@ class _VehicleSelectionMapScreenState extends State<VehicleSelectionMapScreen> {
     }
   }
 
-
-  // ✅ Gọi API đặt xe (Bản nâng cấp: Có Dialog xoay + Chuyển màn hình)
+  //  Gọi API đặt xe (Bản nâng cấp: Có Dialog xoay + Chuyển màn hình)
   Future<void> _bookRide() async {
     if (_fareResponse == null) return;
 
@@ -137,7 +197,8 @@ class _VehicleSelectionMapScreenState extends State<VehicleSelectionMapScreen> {
         ),
         vehicleType: _selectedVehicleType,
         paymentMethod: 'cash',
-        distance: _tripDistance, // Số km thực tế đã lưu
+        distance: _tripDistance,
+        promoCode: _selectedPromoCode, // Truyền mã giảm giá nếu có
       );
 
       // Giả vờ delay 2 giây cho thầy cô kịp đọc chữ "Đang tìm..." (Tùy chọn)
@@ -148,15 +209,15 @@ class _VehicleSelectionMapScreenState extends State<VehicleSelectionMapScreen> {
 
       // 2. TẮT DIALOG XOAY XOAY (Quan trọng: Phải kiểm tra mounted)
       if (mounted) {
-        Navigator.of(context).pop(); 
+        Navigator.of(context).pop();
       }
 
       // Xử lý kết quả
       if (response != null) {
         if (response.assignedDriver != null) {
-          // ✅ TRƯỜNG HỢP 1: TÌM THẤY TÀI XẾ
-          print("✅ Đã tìm thấy tài xế: ${response.assignedDriver!.fullName}");
-          
+          //  TRƯỜNG HỢP 1: TÌM THẤY TÀI XẾ
+          print(" Đã tìm thấy tài xế: ${response.assignedDriver!.fullName}");
+
           if (mounted) {
             // Chuyển sang màn hình Tracking ngay lập tức
             // Dùng pushReplacement để khách không bấm Back quay lại đặt tiếp được
@@ -165,14 +226,17 @@ class _VehicleSelectionMapScreenState extends State<VehicleSelectionMapScreen> {
               MaterialPageRoute(
                 builder: (context) => RideTrackingScreen(
                   rideId: response.rideId,
-                  driverInfo: response.assignedDriver, // Truyền thông tin tài xế qua
+                  driverInfo:
+                      response.assignedDriver, // Truyền thông tin tài xế qua
                 ),
               ),
             );
           }
         } else {
-          // ❌ TRƯỜNG HỢP 2: ĐẶT ĐƯỢC NHƯNG KHÔNG CÓ TÀI XẾ (Null)
-          _showError("Hiện không có tài xế nào gần bạn (5km). Vui lòng thử lại!");
+          //  TRƯỜNG HỢP 2: ĐẶT ĐƯỢC NHƯNG KHÔNG CÓ TÀI XẾ (Null)
+          _showError(
+            "Hiện không có tài xế nào gần bạn (5km). Vui lòng thử lại!",
+          );
         }
       } else {
         _showError('Lỗi kết nối. Vui lòng thử lại.');
@@ -203,7 +267,7 @@ class _VehicleSelectionMapScreenState extends State<VehicleSelectionMapScreen> {
         icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
       ),
     };
-await _locationService.teleportDriverToLocation(widget.pickupLatLng);
+    await _locationService.teleportDriverToLocation(widget.pickupLatLng);
     await _getRoute();
     setState(() {
       _isLoading = false;
@@ -261,16 +325,61 @@ await _locationService.teleportDriverToLocation(widget.pickupLatLng);
               ),
             };
           });
-    print("📏 Khoảng cách thực tế (Goong): $totalDistance km");
-          
+
+          print("📏 Khoảng cách thực tế (Goong): $totalDistance km");
+
           // Gọi hàm tính tiền với con số chính xác vừa lấy được
-          _calculateFare(totalDistance);
+          await _calculateFare(distanceKm: totalDistance);
           _zoomToFitRoute();
+          return; //  Return sớm nếu thành công
         }
       }
+
+      //  NẾU RƠI VÀO ĐÂY = API GOONG LỖI HOẶC KHÔNG CÓ ROUTE
+      print(' API Goong không trả về route. Dùng khoảng cách dự phòng');
+      _useFallbackDistance();
     } catch (e) {
-      print('Lỗi lấy route: $e');
+      print(' Lỗi lấy route: $e');
+      //  NẾU API GOONG BỊ TIMEOUT HOẶC LỖI MẠNG
+      _useFallbackDistance();
     }
+  }
+
+  //  HÀM DỰ PHÒNG: Tính khoảng cách thẳng khi API Goong lỗi
+  void _useFallbackDistance() {
+    double distance =
+        _calculateStraightDistance(
+          widget.pickupLatLng,
+          widget.destinationLatLng,
+        ) *
+        1.3; // Nhân 1.3 vì đường đi thực tế dài hơn đường chim bay
+
+    setState(() {
+      _distance = '${distance.toStringAsFixed(1)} km';
+      _duration = '~${(distance * 3).toInt()} phút'; // Giả sử 20km/h
+    });
+
+    print(' Dùng khoảng cách dự phòng: $distance km');
+
+    //  VẪN GỌI TÍNH GIÁ dù không có route từ Goong
+    _calculateFare(distanceKm: distance);
+  }
+
+  //  Tính khoảng cách chim bay (Haversine formula)
+  double _calculateStraightDistance(LatLng from, LatLng to) {
+    const double earthRadius = 6371; // km
+    double dLat = (to.latitude - from.latitude) * (3.14159265 / 180);
+    double dLon = (to.longitude - from.longitude) * (3.14159265 / 180);
+
+    double a =
+        sin(dLat / 2) * sin(dLat / 2) +
+        cos(from.latitude * (3.14159265 / 180)) *
+            cos(to.latitude * (3.14159265 / 180)) *
+            sin(dLon / 2) *
+            sin(dLon / 2);
+
+    double c = 2 * atan2(sqrt(a), sqrt(1 - a));
+    return earthRadius * c;
   }
 
   void _zoomToFitRoute() {
@@ -305,20 +414,25 @@ await _locationService.teleportDriverToLocation(widget.pickupLatLng);
       );
     });
   }
-// Hàm hiện Dialog đang tìm xe
+
+  // Hàm hiện Dialog đang tìm xe
   void _showFindingDriverDialog() {
     showDialog(
       context: context,
       barrierDismissible: false, // Không cho bấm ra ngoài để tắt
       builder: (BuildContext context) {
         return Dialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12.0),
+          ),
           child: Padding(
             padding: const EdgeInsets.all(20.0),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const CircularProgressIndicator(color: AppTheme.primaryGreen), // Xoay xoay
+                const CircularProgressIndicator(
+                  color: AppTheme.primaryGreen,
+                ), // Xoay xoay
                 const SizedBox(height: 20),
                 const Text(
                   "Đang tìm tài xế gần bạn...",
@@ -336,6 +450,7 @@ await _locationService.teleportDriverToLocation(widget.pickupLatLng);
       },
     );
   }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -488,9 +603,12 @@ await _locationService.teleportDriverToLocation(widget.pickupLatLng);
                           ? const Center(child: CircularProgressIndicator())
                           : ListView.separated(
                               controller: scrollController,
-                              padding: const EdgeInsets.symmetric(horizontal: 16),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                              ),
                               itemCount: _vehicles.length + 2,
-                              separatorBuilder: (context, index) => const Divider(),
+                              separatorBuilder: (context, index) =>
+                                  const Divider(),
                               itemBuilder: (context, index) {
                                 if (index == 0) {
                                   return _buildPromoBanner();
@@ -514,13 +632,13 @@ await _locationService.teleportDriverToLocation(widget.pickupLatLng);
     );
   }
 
-Widget _buildVehicleItem(Map<String, dynamic> vehicle) {
+  Widget _buildVehicleItem(Map<String, dynamic> vehicle) {
     final isSelected = vehicle['vehicleType'] == _selectedVehicleType;
 
     return GestureDetector(
-      // 👇 QUAN TRỌNG: Dòng này giúp bấm vào chỗ trắng cũng ăn
-      behavior: HitTestBehavior.opaque, 
-      
+      //  QUAN TRỌNG: Dòng này giúp bấm vào chỗ trắng cũng ăn
+      behavior: HitTestBehavior.opaque,
+
       onTap: () {
         print("👉 Đã chọn xe: ${vehicle['vehicleType']}");
         setState(() {
@@ -532,11 +650,15 @@ Widget _buildVehicleItem(Map<String, dynamic> vehicle) {
         padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
         decoration: BoxDecoration(
           // Màu nền thay đổi rõ hơn khi chọn
-          color: isSelected ? AppTheme.primaryGreen.withOpacity(0.1) : Colors.white,
+          color: isSelected
+              ? AppTheme.primaryGreen.withOpacity(0.1)
+              : Colors.white,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
             // Viền xanh đậm khi chọn
-            color: isSelected ? AppTheme.primaryGreen : Colors.grey.withOpacity(0.2),
+            color: isSelected
+                ? AppTheme.primaryGreen
+                : Colors.grey.withOpacity(0.2),
             width: isSelected ? 2 : 1,
           ),
           boxShadow: [
@@ -545,7 +667,7 @@ Widget _buildVehicleItem(Map<String, dynamic> vehicle) {
                 color: Colors.black.withOpacity(0.03),
                 blurRadius: 4,
                 offset: const Offset(0, 2),
-              )
+              ),
           ],
         ),
         child: Row(
@@ -559,11 +681,14 @@ Widget _buildVehicleItem(Map<String, dynamic> vehicle) {
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Center(
-                child: Text(vehicle['icon'], style: const TextStyle(fontSize: 28)),
+                child: Text(
+                  vehicle['icon'],
+                  style: const TextStyle(fontSize: 28),
+                ),
               ),
             ),
             const SizedBox(width: 16),
-            
+
             // Thông tin xe
             Expanded(
               child: Column(
@@ -574,17 +699,26 @@ Widget _buildVehicleItem(Map<String, dynamic> vehicle) {
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 16,
-                      color: isSelected ? AppTheme.primaryGreen : Colors.black87,
+                      color: isSelected
+                          ? AppTheme.primaryGreen
+                          : Colors.black87,
                     ),
                   ),
                   const SizedBox(height: 4),
                   Row(
                     children: [
-                      const Icon(Icons.access_time, size: 14, color: Colors.grey),
+                      const Icon(
+                        Icons.access_time,
+                        size: 14,
+                        color: Colors.grey,
+                      ),
                       const SizedBox(width: 4),
                       Text(
                         "Đón trong ${vehicle['time']}", // Sửa lại text cho gọn
-                        style: const TextStyle(fontSize: 13, color: Colors.grey),
+                        style: const TextStyle(
+                          fontSize: 13,
+                          color: Colors.grey,
+                        ),
                       ),
                     ],
                   ),
@@ -597,18 +731,14 @@ Widget _buildVehicleItem(Map<String, dynamic> vehicle) {
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
                 Text(
-                  '${formatMoney(vehicle['price'])}đ', // 👇 Gọi hàm format ở đây
+                  '${formatMoney(vehicle['price'])}đ', //  Gọi hàm format ở đây
                   style: TextStyle(
-                    fontWeight: FontWeight.bold, 
+                    fontWeight: FontWeight.bold,
                     fontSize: 16,
                     color: isSelected ? AppTheme.primaryGreen : Colors.black,
                   ),
                 ),
-                if (isSelected)
-                  const Padding(
-                    padding: EdgeInsets.only(top: 4),
-                 
-                  )
+                if (isSelected) const Padding(padding: EdgeInsets.only(top: 4)),
               ],
             ),
           ],
@@ -616,41 +746,190 @@ Widget _buildVehicleItem(Map<String, dynamic> vehicle) {
       ),
     );
   }
+
   // Hàm format tiền: 37089 -> 37.000
   String formatMoney(dynamic amount) {
     if (amount == null) return '0';
     int price = amount.toInt();
-    
+
     // 1. Làm tròn đến hàng nghìn (37089 -> 37000)
     price = (price / 1000).round() * 1000;
 
     // 2. Thêm dấu chấm phân cách hàng nghìn
     // (Dùng RegExp đơn giản đỡ phải cài thư viện intl)
     return price.toString().replaceAllMapped(
-        RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), 
-        (Match m) => '${m[1]}.'
+      RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
+      (Match m) => '${m[1]}.',
+    );
+  }
+
+  //  Hàm hiện Dialog chọn mã
+  void _showPromoDialog() {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Container(
+            constraints: const BoxConstraints(maxHeight: 500),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Header
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    children: [
+                      const Text(
+                        'Chọn mã khuyến mãi',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const Spacer(),
+                      IconButton(
+                        icon: const Icon(Icons.close),
+                        onPressed: () => Navigator.pop(context),
+                      ),
+                    ],
+                  ),
+                ),
+                const Divider(height: 1),
+
+                // Danh sách mã
+                Flexible(
+                  child: _promotions.isEmpty
+                      ? const Center(
+                          child: Padding(
+                            padding: EdgeInsets.all(32),
+                            child: Text(
+                              'Không có mã khuyến mãi',
+                              style: TextStyle(color: Colors.grey),
+                            ),
+                          ),
+                        )
+                      : ListView.builder(
+                          shrinkWrap: true,
+                          itemCount: _promotions.length,
+                          itemBuilder: (context, index) {
+                            final promo = _promotions[index];
+                            return _buildPromoItem(promo);
+                          },
+                        ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildPromoItem(Promotion promo) {
+    return InkWell(
+      onTap: () {
+        Navigator.pop(context); // Đóng dialog
+        // Gọi lại API tính tiền với mã vừa chọn
+        _calculateFare(promoCode: promo.promoCode);
+      },
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          border: Border(bottom: BorderSide(color: Colors.grey.shade200)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: Colors.orange.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.discount, color: Colors.orange),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    promo.promoCode,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: AppTheme.primaryGreen,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    promo.description,
+                    style: const TextStyle(fontSize: 13, color: Colors.grey),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey),
+          ],
+        ),
+      ),
     );
   }
 
   Widget _buildPromoBanner() {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.grey[100],
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: const Row(
-        children: [
-          Icon(Icons.discount, color: Colors.orange),
-          SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              'Tiền mặt     🎟️ Ưu đãi giảm 50% tối đa 50,000 VND',
-              style: TextStyle(fontSize: 13),
+    return InkWell(
+      //  Bọc InkWell để bấm được
+      onTap: _showPromoDialog,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: _selectedPromoCode != null
+              ? Colors.orange[50]
+              : Colors.grey[100], // Đổi màu nếu đã áp mã
+          borderRadius: BorderRadius.circular(12),
+          border: _selectedPromoCode != null
+              ? Border.all(color: Colors.orange)
+              : null,
+        ),
+        child: Row(
+          children: [
+            Icon(
+              Icons.discount,
+              color: _selectedPromoCode != null ? Colors.orange : Colors.grey,
             ),
-          ),
-        ],
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Khuyến mãi',
+                    style: TextStyle(fontSize: 12, color: Colors.grey),
+                  ),
+                  Text(
+                    _selectedPromoCode != null
+                        ? "$_selectedPromoCode - $_promoText"
+                        : "Nhập mã khuyến mãi", //  Text thay đổi
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: _selectedPromoCode != null
+                          ? Colors.orange[800]
+                          : Colors.black,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.arrow_forward_ios, size: 14, color: Colors.grey),
+          ],
+        ),
       ),
     );
   }
@@ -710,4 +989,3 @@ Widget _buildVehicleItem(Map<String, dynamic> vehicle) {
     );
   }
 }
-

@@ -25,7 +25,6 @@ class _RegisterScreenState extends State<RegisterScreen>
   bool _obscureConfirmPassword = true;
   bool _isLoading = false;
   bool _agreeToTerms = false;
-  String _selectedRole = 'customer'; // Default role
 
   late AnimationController _fadeController;
   late AnimationController _slideController;
@@ -98,7 +97,7 @@ class _RegisterScreenState extends State<RegisterScreen>
       phone: _phoneController.text.trim(),
       email: _emailController.text.trim(),
       password: _passwordController.text,
-      role: _selectedRole,
+      role: 'passenger',
     );
 
     if (mounted) {
@@ -345,67 +344,6 @@ class _RegisterScreenState extends State<RegisterScreen>
                             }
                             return null;
                           },
-                        ),
-
-                        const SizedBox(height: 14),
-
-                        // Role Selection
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            border: Border.all(
-                              color: AppTheme.grey.withOpacity(0.3),
-                            ),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: DropdownButtonHideUnderline(
-                            child: DropdownButton<String>(
-                              value: _selectedRole,
-                              isExpanded: true,
-                              icon: const Icon(
-                                Icons.arrow_drop_down,
-                                color: AppTheme.primaryGreen,
-                              ),
-                              items: const [
-                                DropdownMenuItem(
-                                  value: 'customer',
-                                  child: Row(
-                                    children: [
-                                      Icon(
-                                        Icons.person_outline,
-                                        color: AppTheme.primaryGreen,
-                                        size: 20,
-                                      ),
-                                      SizedBox(width: 12),
-                                      Text('Khách hàng'),
-                                    ],
-                                  ),
-                                ),
-                                DropdownMenuItem(
-                                  value: 'driver',
-                                  child: Row(
-                                    children: [
-                                      Icon(
-                                        Icons.local_taxi,
-                                        color: AppTheme.primaryGreen,
-                                        size: 20,
-                                      ),
-                                      SizedBox(width: 12),
-                                      Text('Tài xế'),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                              onChanged: (String? newValue) {
-                                setState(() {
-                                  _selectedRole = newValue ?? 'customer';
-                                });
-                              },
-                            ),
-                          ),
                         ),
 
                         const SizedBox(height: 14),

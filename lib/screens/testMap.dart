@@ -20,7 +20,7 @@
 //   GoogleMapController? _mapController;
 //   LatLng _currentPosition = const LatLng(10.762622, 106.660172); // default HCM
 
-//   // 📍 Lấy vị trí hiện tại
+//   //  Lấy vị trí hiện tại
 //   Future<void> _getCurrentLocation() async {
 //     bool serviceEnabled;
 //     LocationPermission permission;
