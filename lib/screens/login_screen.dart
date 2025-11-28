@@ -4,8 +4,12 @@ import '../services/auth_service.dart'; // ✅ Thêm import AuthService
 import '../models/auth_models.dart'; // ✅ Thêm import AuthModels
 import 'register_screen.dart';
 import 'main_screen.dart'; // ✅ MainScreen cho passenger
+
 // ✅ DriverMainScreen cho driver
 import '../screens/admin_home.dart'; // ✅ AdminHomePage cho admin (điều chỉnh path nếu cần)
+
+import 'main_screen_driver.dart'; // ✅ DriverMainScreen cho driver
+
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -95,11 +99,18 @@ class _LoginScreenState extends State<LoginScreen>
       // ✅ Nếu login thành công, kiểm tra role và chuyển màn hình tương ứng
       Widget nextScreen;
       String welcomeMessage;
+
       if (response.user.role == 'admin') {
         nextScreen =
             const AdminHomePage(); // ✅ Chuyển đến Admin Dashboard nếu admin
         welcomeMessage =
             'Đăng nhập thành công! Chào Admin ${response.user.fullName} - Bảng điều khiển quản trị';
+
+      if (response.user.role == 'driver') {
+        nextScreen = const DriverMainScreen();
+        welcomeMessage =
+            'Đăng nhập thành công! Xin chào ${response.user.fullName} - Ứng dụng tài xế';
+
       } else {
         nextScreen = const MainScreen();
         welcomeMessage =
