@@ -315,7 +315,7 @@ class RideDetail {
   final double totalFare;
   final String paymentMethod;
   final DateTime createdAt;
-
+  final DriverInfo? driverInfo;
   RideDetail({
     required this.rideId,
     required this.passengerId,
@@ -330,6 +330,7 @@ class RideDetail {
     required this.totalFare,
     required this.paymentMethod,
     required this.createdAt,
+    this.driverInfo,
   });
 
   factory RideDetail.fromJson(Map<String, dynamic> json) {

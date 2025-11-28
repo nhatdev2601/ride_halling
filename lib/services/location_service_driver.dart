@@ -47,4 +47,31 @@ class LocationServiceDriver {
       return false;
     }
   }
+  Future<bool> teleportDriverToPickup(String rideId) async {
+    try {
+      final String url = '$simulationUrl/teleport-to-pickup/$rideId';
+      
+      print('🚀 [Flutter] Đang gọi Teleport Driver...');
+      print('🔗 URL: $url');
+
+      final response = await http.post(
+        Uri.parse(url),
+        headers: {
+          'Content-Type': 'application/json',
+          // 'Authorization': 'Bearer $token' // Nếu cần token thì bỏ comment
+        },
+      );
+
+      if (response.statusCode == 200) {
+        print('✅ [Flutter] Teleport thành công! Xe đã nhảy tới gần điểm đón.');
+        return true;
+      } else {
+        print('❌ [Flutter] Lỗi Teleport: ${response.statusCode} - ${response.body}');
+        return false;
+      }
+    } catch (e) {
+      print('❌ [Flutter] Exception Teleport: $e');
+      return false;
+    }
+  }
 }

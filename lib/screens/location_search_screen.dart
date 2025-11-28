@@ -8,9 +8,9 @@ import 'package:geolocator/geolocator.dart';
 import 'pickup_confirmation_screen.dart';
 
 class LocationSearchScreen extends StatefulWidget {
-  final String? initialDestination; // ✅ Thêm tham số nhận điểm đến ban đầu
-  final String? initialPickup; // ✅ Thêm tham số nhận điểm đón ban đầu
-  final bool isEditingPickup; // ✅ Cho biết đang chỉnh sửa điểm đón
+  final String? initialDestination;
+  final String? initialPickup;
+  final bool isEditingPickup;
 
   const LocationSearchScreen({
     super.key,
@@ -26,8 +26,7 @@ class LocationSearchScreen extends StatefulWidget {
 class _LocationSearchScreenState extends State<LocationSearchScreen> {
   final TextEditingController _searchController = TextEditingController();
   final TextEditingController _destinationController = TextEditingController();
-  final FocusNode _searchFocusNode =
-      FocusNode(); // ✅ Thêm FocusNode cho điểm đi
+  final FocusNode _searchFocusNode = FocusNode();
   final FocusNode _destinationFocusNode = FocusNode();
   List<Map<String, dynamic>> _suggestions = [];
   Timer? _debounce;
