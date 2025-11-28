@@ -3,7 +3,9 @@ import '../theme/app_theme.dart';
 import '../services/auth_service.dart'; // ✅ Thêm import AuthService
 import '../models/auth_models.dart'; // ✅ Thêm import AuthModels
 import 'register_screen.dart';
-import 'main_screen.dart';
+import 'main_screen.dart'; // ✅ MainScreen cho passenger
+// ✅ DriverMainScreen cho driver
+import '../screens/admin_home.dart'; // ✅ AdminHomePage cho admin (điều chỉnh path nếu cần)
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -17,7 +19,9 @@ class _LoginScreenState extends State<LoginScreen>
   final _formKey = GlobalKey<FormState>();
   // final _emailController = TextEditingController();
   // final _passwordController = TextEditingController();
-  final _emailController = TextEditingController(text: "thao@gmail.com");
+  final _emailController = TextEditingController(
+    text: "admin@rideapp.com",
+  ); // ✅ Đổi email mặc định thành admin để test
   final _passwordController = TextEditingController(text: "123456");
   final AuthService _authService = AuthService(); // ✅ Thêm AuthService
 
@@ -88,23 +92,32 @@ class _LoginScreenState extends State<LoginScreen>
 
       if (!mounted) return;
 
-      // ✅ Nếu login thành công, chuyển màn hình
-      if (response != null) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => const MainScreen()),
-        );
-
-        // ✅ Hiển thị thông báo thành công
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Đăng nhập thành công! Xin chào ${response.user.fullName}',
-            ),
-            backgroundColor: AppTheme.success,
-          ),
-        );
+      // ✅ Nếu login thành công, kiểm tra role và chuyển màn hình tương ứng
+      Widget nextScreen;
+      String welcomeMessage;
+      if (response.user.role == 'admin') {
+        nextScreen =
+            const AdminHomePage(); // ✅ Chuyển đến Admin Dashboard nếu admin
+        welcomeMessage =
+            'Đăng nhập thành công! Chào Admin ${response.user.fullName} - Bảng điều khiển quản trị';
+      } else {
+        nextScreen = const MainScreen();
+        welcomeMessage =
+            'Đăng nhập thành công! Xin chào ${response.user.fullName} - Ứng dụng khách hàng';
       }
+
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => nextScreen),
+      );
+
+      // ✅ Hiển thị thông báo thành công
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(welcomeMessage),
+          backgroundColor: AppTheme.success,
+        ),
+      );
     } catch (e) {
       if (!mounted) return;
 
