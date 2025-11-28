@@ -358,7 +358,7 @@ namespace api_ride.Controllers
                 // Nếu ko chỉ định status cụ thể, query tất cả status đang active
                 var activeStatuses = !string.IsNullOrEmpty(status)
                     ? new[] { status }
-                    : new[] { "requesting", "accepted", "arrived", "in_progress" };
+                    : new[] { "requesting", "completed", "cancelled", "in_progress" };
 
                 var allRides = new List<object>();
 
@@ -484,6 +484,44 @@ namespace api_ride.Controllers
                 return StatusCode(500, new { error = ex.Message });
             }
         }
+        [HttpGet("passengers/{passengerId}/rides")]
+        public async Task<ActionResult> GetPassengerRides(Guid passengerId, [FromQuery] int limit = 20)
+        {
+            try
+            {
+                // 1. CQL Query: Sử dụng Partition Key 'passenger_id' và LIMIT.
+                var cql = "SELECT * FROM ride.rides_by_passenger WHERE passenger_id = ? LIMIT ?";
+
+                // 2. Thực thi Query
+                var result = await _cassandraService.ExecuteQueryAsync(cql, new object[] { passengerId, limit });
+
+                // 3. Map và trả về kết quả
+                var rides = result.Select(row => new
+                {
+                    ride_id = row.GetValue<Guid>("ride_id"),
+                    created_at = row.GetValue<DateTime>("created_at"),
+                    status = row.GetValue<string>("status"),
+                    total_fare = row.GetValue<decimal>("total_fare"),
+                    driver_id = row.GetValue<Guid?>("driver_id"),
+                    pickup_address = row.GetValue<string>("pickup_address"),
+                    dropoff_address = row.GetValue<string>("dropoff_address"),
+                    vehicle_type = row.GetValue<string>("vehicle_type")
+                });
+
+                _logger.LogInformation("Queried {Count} rides for passenger {Id}", rides.Count(), passengerId);
+
+                return Ok(new
+                {
+                    total = rides.Count(),
+                    rides = rides
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting rides for passenger {Id}", passengerId);
+                return StatusCode(500, new { message = "Internal server error" });
+            }
+        }
 
         /// <summary>
         /// Thống kê tổng quan hệ thống (Dashboard Admin)
@@ -494,23 +532,18 @@ namespace api_ride.Controllers
         {
             try
             {
-                // ⚠️ LƯU Ý: Query COUNT(*) trên Cassandra rất chậm với data lớn
-                // Nên dùng cơ chế đếm riêng hoặc cache kết quả
-
+               
                 _logger.LogWarning("Admin is running COUNT queries. This may be slow on large datasets.");
 
-                // Đếm User (Query toàn bảng - chậm)
+    
                 var userCountCql = "SELECT COUNT(*) as total FROM users";
                 var userCount = (await _cassandraService.ExecuteQueryAsync(userCountCql, Array.Empty<object>()))
                     .FirstOrDefault()?.GetValue<long>("total") ?? 0;
 
-                // Đếm Driver (Query toàn bảng - chậm)
                 var driverCountCql = "SELECT COUNT(*) as total FROM drivers";
                 var driverCount = (await _cassandraService.ExecuteQueryAsync(driverCountCql, Array.Empty<object>()))
                     .FirstOrDefault()?.GetValue<long>("total") ?? 0;
 
-                // ✅ Đếm Ride theo status (Query theo Partition Key - NHANH)
-                // ⚠️ BỎ ALLOW FILTERING vì status đã là Partition Key rồi!
                 var requestingCql = "SELECT COUNT(*) as total FROM rides_by_status WHERE status = ?";
                 var requestingCount = (await _cassandraService.ExecuteQueryAsync(requestingCql, new object[] { "requesting" }))
                     .FirstOrDefault()?.GetValue<long>("total") ?? 0;
